@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/slipe-fun/bloom-kit/client"
 	"github.com/slipe-fun/bloom-kit/domain"
-	"github.com/tink-crypto/tink-go/v2/subtle/random"
 )
 
 type MessagesHandler struct {
@@ -36,16 +36,18 @@ func (h *UserHandler) OnUserUpdated(userJSON []byte) {
 }
 
 func main() {
-	key := random.GetRandomBytes(32)
-	// key, err := hex.DecodeString("")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	// key := random.GetRandomBytes(32)
+	key, err := hex.DecodeString("0577888fc964059c068364441889f5d18fe8db588111b89e02c5815f755c8994")
+	if err != nil {
+		panic(err)
+	}
 
 	bloomClient := client.NewClient("https://api.bloomapp.pw/", "wss://api.bloomapp.pw/ws", "./storage", key)
 	if err := bloomClient.Initialize(); err != nil {
 		panic(err)
 	}
+
+	fmt.Println(bloomClient.GetLocalChats())
 
 	bloomClient.RegisterMessagesListener(&MessagesHandler{
 		client: bloomClient,
@@ -54,6 +56,9 @@ func main() {
 	bloomClient.RegisterUserListener(&UserHandler{})
 
 	registerResponse, err := bloomClient.Register()
+	if err != nil {
+		panic(err)
+	}
 	// recoveryKey := ""
 	// a, err := bloomClient.Login(recoveryKey)
 
