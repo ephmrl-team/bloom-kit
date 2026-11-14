@@ -199,7 +199,7 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 			FROM messages
 			WHERE chat_id = ?
 			  AND id < ?
-			ORDER BY id ASC
+			ORDER BY id DESC
 			LIMIT ?
 		`
 		args = []any{chatID, beforeID, limit}
@@ -216,7 +216,7 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 				content
 			FROM messages
 			WHERE chat_id = ?
-			ORDER BY id ASC
+			ORDER BY id DESC
 			LIMIT ?
 		`
 		args = []any{chatID, limit}
@@ -254,6 +254,10 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
 	}
 
 	if err := d.populateReplies(messages); err != nil {

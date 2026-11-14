@@ -68,6 +68,13 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	    FOREIGN KEY (reply_to) REFERENCES messages(id) ON DELETE SET NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS chat_sync_states (
+	    chat_id INTEGER PRIMARY KEY,
+	    oldest_contiguous_id INTEGER NOT NULL DEFAULT 0,
+
+	    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_messages_chat_id_id
 	    ON messages(chat_id, id);
 

@@ -265,11 +265,17 @@ func LoadMessages(chatID C.int, beforeID C.int) *C.char {
 	if globalClient == nil {
 		return C.CString(`{"error": "client not initialized"}`)
 	}
-	res, err := globalClient.LoadMessages(int(chatID), int(beforeID))
+	res, err := globalClient.LoadMessages("", int(chatID), int(beforeID))
 	if err != nil {
 		return makeErrorJSON(err)
 	}
-	return C.CString(string(res))
+
+	resJSON, err := json.Marshal(res)
+	if err != nil {
+		return makeErrorJSON(err)
+	}
+
+	return C.CString(string(resJSON))
 }
 
 //export StartExchangeSession

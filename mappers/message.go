@@ -74,3 +74,11 @@ func MapDomainMessageToDecrypted(msg *domain.Message) domain.DecryptedMessageWit
 
 	return decrypted
 }
+
+func MapDomainMessagesToDecrypted(messages []domain.Message) []domain.DecryptedMessageWithReply {
+	var result []domain.DecryptedMessageWithReply
+	for i := range messages {
+		result = append(result, MapDomainMessageToDecrypted(&messages[i]))
+	}
+	return result
+}

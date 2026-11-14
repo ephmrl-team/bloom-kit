@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 
 	"github.com/slipe-fun/bloom-kit/domain"
+	messageManager "github.com/slipe-fun/bloom-kit/managers/message"
 	"github.com/slipe-fun/bloom-kit/mappers"
 )
 
@@ -19,23 +21,10 @@ func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.De
 		return nil, err
 	}
 
-	var sourceMessages []domain.Message
-
-	if len(messagesFromStorage) > 0 {
-		sourceMessages = messagesFromStorage
-	} else {
-		return []domain.DecryptedMessageWithReply{}, nil
-	}
-
-	result := make([]domain.DecryptedMessageWithReply, len(sourceMessages))
-	for i := range sourceMessages {
-		result[i] = mappers.MapDomainMessageToDecrypted(&sourceMessages[i])
-	}
-
-	return result, nil
+	return mappers.MapDomainMessagesToDecrypted(messagesFromStorage), nil
 }
 
-func (c *BloomClient) getLastMessagesFromServer(chatID int) ([]domain.DecryptedMessageWithReply, error) {
+func (c *BloomClient) getChatMessages(chatID, messageID int, direction messageManager.Direction) ([]domain.Message, error) {
 	if c.credentials == nil {
 		return nil, errors.New("unauthorized: client is not logged in")
 	}
@@ -55,25 +44,181 @@ func (c *BloomClient) getLastMessagesFromServer(chatID int) ([]domain.DecryptedM
 	}, recipient.ID)
 	userIdentity := mappers.ConvertUserToIdentity(user)
 
-	var sourceMessages []domain.Message
-
-	messages, err := c.messageManager.GetMessages(context.Background(), chatID, 0, "after", chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
+	messages, err := c.messageManager.GetMessages(
+		context.Background(),
+		chatID,
+		messageID,
+		direction,
+		chat.ChatKey,
+		chat.SyncKey,
+		userIdentity,
+		recipientIdentity,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(messages) > 0 {
-		sourceMessages = messages
-	} else {
-		return []domain.DecryptedMessageWithReply{}, nil
+	sort.SliceStable(messages, func(i, j int) bool {
+		return messages[i].ID < messages[j].ID
+	})
+
+	return messages, nil
+}
+
+func (c *BloomClient) getChatMessagesBefore(chatID, beforeID int) ([]domain.Message, error) {
+	return c.getChatMessages(chatID, beforeID, messageManager.DirectionBefore)
+}
+
+func (c *BloomClient) getChatMessagesAfter(chatID, afterID int) ([]domain.Message, error) {
+	return c.getChatMessages(chatID, afterID, messageManager.DirectionAfter)
+}
+
+func (c *BloomClient) extendOldestContiguousID(chatID, messageID int) error {
+	if messageID <= 0 {
+		return nil
 	}
 
-	result := make([]domain.DecryptedMessageWithReply, len(sourceMessages))
-	for i := range sourceMessages {
-		result[i] = mappers.MapDomainMessageToDecrypted(&sourceMessages[i])
+	oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
+	if err != nil {
+		return err
 	}
 
-	return result, nil
+	if oldestContiguousID == 0 || messageID < oldestContiguousID {
+		oldestContiguousID = messageID
+	}
+
+	return c.database.SetChatOldestContiguousID(chatID, oldestContiguousID)
+}
+
+func (c *BloomClient) saveLoadedMessages(chatID int, messages []domain.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	if err := c.database.SaveMessages(messages); err != nil {
+		return err
+	}
+
+	return c.extendOldestContiguousID(chatID, messages[0].ID)
+}
+
+func (c *BloomClient) loadMessagesFromServer(chatID, beforeID int) ([]domain.Message, error) {
+	messages, err := c.getChatMessagesBefore(chatID, beforeID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.saveLoadedMessages(chatID, messages); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+func (c *BloomClient) fillMessagesGap(chatID, afterID, stopBeforeID int) bool {
+	if afterID <= 0 || stopBeforeID <= 0 || afterID >= stopBeforeID {
+		return false
+	}
+
+	cursor := afterID
+
+	for cursor < stopBeforeID {
+		page, err := c.getChatMessagesAfter(chatID, cursor)
+		if err != nil || len(page) == 0 {
+			return false
+		}
+
+		if err := c.database.SaveMessages(page); err != nil {
+			return false
+		}
+
+		cursor = page[len(page)-1].ID
+	}
+
+	return true
+}
+
+func (c *BloomClient) loadInitialMessages(chatID int) ([]domain.Message, error) {
+	newestLocalMessage, err := c.database.GetChatLastMessage(chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	messages, err := c.getChatMessagesAfter(chatID, 0)
+	if err != nil {
+		if newestLocalMessage == nil {
+			return nil, err
+		}
+
+		return c.database.GetMessages(chatID, 0, 20)
+	}
+
+	if len(messages) == 0 {
+		return messages, nil
+	}
+
+	if err := c.database.SaveMessages(messages); err != nil {
+		return nil, err
+	}
+
+	oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	oldestMessageID := messages[0].ID
+
+	overlapsLocal := oldestContiguousID > 0 &&
+		newestLocalMessage != nil &&
+		newestLocalMessage.ID >= oldestMessageID
+
+	gapFilled := false
+	if newestLocalMessage != nil && newestLocalMessage.ID < oldestMessageID {
+		gapFilled = c.fillMessagesGap(chatID, newestLocalMessage.ID, oldestMessageID)
+	}
+
+	if overlapsLocal {
+		if oldestMessageID < oldestContiguousID {
+			oldestContiguousID = oldestMessageID
+		}
+	} else if !(gapFilled && oldestContiguousID > 0) {
+		oldestContiguousID = oldestMessageID
+	}
+
+	if err := c.database.SetChatOldestContiguousID(chatID, oldestContiguousID); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+func (c *BloomClient) loadMessagesAuto(chatID, beforeID int) ([]domain.Message, error) {
+	localMessages, err := c.database.GetMessages(chatID, beforeID, 20)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(localMessages) > 0 {
+		oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
+		if err != nil {
+			return nil, err
+		}
+
+		newestLocalMessage, err := c.database.GetChatLastMessage(chatID)
+		if err != nil {
+			return nil, err
+		}
+
+		if oldestContiguousID > 0 &&
+			localMessages[0].ID >= oldestContiguousID &&
+			(len(localMessages) == 20 || localMessages[0].ID == oldestContiguousID) &&
+			newestLocalMessage != nil &&
+			beforeID <= newestLocalMessage.ID {
+			return localMessages, nil
+		}
+	}
+
+	return c.loadMessagesFromServer(chatID, beforeID)
 }
 
 func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
@@ -150,31 +295,80 @@ func (c *BloomClient) SendMessage(chatID int, replyToID int, content string) ([]
 	return json.Marshal(message)
 }
 
-func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]byte, error) {
+func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
 	if c.credentials == nil {
 		return nil, errors.New("unauthorized: client is not logged in")
 	}
 
-	var result []domain.DecryptedMessageWithReply
-
-	switch sourceType {
-	case "server":
-		messages, err := c.getLastMessagesFromServer(chatID)
-		if err != nil {
-			return nil, err
-		}
-
-		result = messages
-	case "storage":
-		messages, err := c.loadMessagesFromStorage(chatID, beforeID)
-		if err != nil {
-			return nil, err
-		}
-
-		result = messages
+	if sourceType == "storage" {
+		return c.loadMessagesFromStorage(chatID, beforeID)
 	}
 
-	return json.Marshal(result)
+	if beforeID <= 0 {
+		messages, err := c.loadInitialMessages(chatID)
+		if err != nil {
+			return nil, err
+		}
+
+		return mappers.MapDomainMessagesToDecrypted(messages), nil
+	}
+
+	if sourceType == "server" {
+		messages, err := c.loadMessagesFromServer(chatID, beforeID)
+		if err != nil {
+			return nil, err
+		}
+
+		return mappers.MapDomainMessagesToDecrypted(messages), nil
+	}
+
+	messages, err := c.loadMessagesAuto(chatID, beforeID)
+	if err != nil {
+		return nil, err
+	}
+
+	return mappers.MapDomainMessagesToDecrypted(messages), nil
+}
+
+func (c *BloomClient) SyncMessages(chatID, afterID int) ([]domain.DecryptedMessageWithReply, error) {
+	if c.credentials == nil {
+		return nil, errors.New("unauthorized: client is not logged in")
+	}
+
+	if afterID <= 0 {
+		messages, err := c.loadInitialMessages(chatID)
+		if err != nil {
+			return nil, err
+		}
+
+		return mappers.MapDomainMessagesToDecrypted(messages), nil
+	}
+
+	var result []domain.Message
+	cursor := afterID
+
+	for {
+		page, err := c.getChatMessagesAfter(chatID, cursor)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			break
+		}
+
+		if err := c.database.SaveMessages(page); err != nil {
+			return nil, err
+		}
+
+		result = append(result, page...)
+		cursor = page[len(page)-1].ID
+
+		if len(page) < 20 {
+			break
+		}
+	}
+
+	return mappers.MapDomainMessagesToDecrypted(result), nil
 }
 
 func (c *BloomClient) RegisterMessagesListener(listener MessagesListener) {
