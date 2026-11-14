@@ -42,7 +42,7 @@ func main() {
 		panic(err)
 	}
 
-	bloomClient := client.NewClient("https://api.bloomapp.pw/", "wss://api.bloomapp.pw/ws", "./storage", key)
+	bloomClient := client.NewClient("http://localhost:8080/", "ws://localhost:8080/ws", "./storage", key)
 	if err := bloomClient.Initialize(); err != nil {
 		panic(err)
 	}
@@ -55,20 +55,20 @@ func main() {
 
 	bloomClient.RegisterUserListener(&UserHandler{})
 
-	registerResponse, err := bloomClient.Register()
-	if err != nil {
-		panic(err)
-	}
-	// recoveryKey := ""
-	// a, err := bloomClient.Login(recoveryKey)
-
-	// userJSON, err := bloomClient.GetMe()
+	// registerResponse, err := bloomClient.Login()
 	// if err != nil {
 	// 	panic(err)
 	// }
+	// recoveryKey := ""
+	// a, err := bloomClient.Login(recoveryKey)
+
+	userJSON, err := bloomClient.GetMe()
+	if err != nil {
+		panic(err)
+	}
 
 	var user *domain.User
-	if err := json.Unmarshal(registerResponse.UserJSON, &user); err != nil {
+	if err := json.Unmarshal(userJSON, &user); err != nil {
 		panic(err)
 	}
 
