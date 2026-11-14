@@ -64,22 +64,26 @@ func (m *MessageNewEvent) UnmarshalJSON(data []byte) error {
 
 func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
 	go func() {
-		backoff := 0 * time.Second
+		backoff := time.Second
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(backoff):
-				err := c.connectAndListen(ctx, fmt.Sprintf("%s?token=%s", wsURL, c.credentials.Token))
-				if err != nil {
-					if backoff < 30*time.Second {
-						backoff *= 2
-					}
-					continue
-				}
-				backoff = time.Second
 			}
+
+			startedAt := time.Now()
+
+			err := c.connectAndListen(ctx, fmt.Sprintf("%s?token=%s", wsURL, c.credentials.Token))
+			if err != nil && time.Since(startedAt) < 5*time.Second {
+				if backoff < 30*time.Second {
+					backoff *= 2
+				}
+				continue
+			}
+
+			backoff = time.Second
 		}
 	}()
 }
@@ -90,6 +94,10 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 		return fmt.Errorf("websocket dial error: %w", err)
 	}
 	defer conn.Close()
+
+	if c.isReconnect() {
+		c.notifyReconnect()
+	}
 
 	for {
 		select {
@@ -125,6 +133,40 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 			}
 		}
 	}
+}
+
+func (c *BloomClient) isReconnect() bool {
+	c.wsMu.Lock()
+	defer c.wsMu.Unlock()
+
+	if c.wsConnected {
+		return true
+	}
+
+	c.wsConnected = true
+	return false
+}
+
+func (c *BloomClient) notifyReconnect() {
+	c.listenerMu.RLock()
+	reconnectListener := c.reconnectListener
+	c.listenerMu.RUnlock()
+
+	if reconnectListener != nil {
+		reconnectListener.OnReconnect()
+	}
+}
+
+func (c *BloomClient) RegisterReconnectListener(listener ReconnectListener) {
+	c.listenerMu.Lock()
+	c.reconnectListener = listener
+	c.listenerMu.Unlock()
+}
+
+func (c *BloomClient) UnregisterReconnectListener() {
+	c.listenerMu.Lock()
+	c.reconnectListener = nil
+	c.listenerMu.Unlock()
 }
 
 func (c *BloomClient) handleNewChatEvent(chatEvent *ChatNewEvent) {

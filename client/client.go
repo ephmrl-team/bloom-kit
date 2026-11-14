@@ -35,6 +35,10 @@ type MessagesListener interface {
 	OnNewMessage(messageJSON []byte)
 }
 
+type ReconnectListener interface {
+	OnReconnect()
+}
+
 type BloomClient struct {
 	wsURL           string
 	apiClient       *api.Client
@@ -53,12 +57,16 @@ type BloomClient struct {
 	exchangeCancel       context.CancelFunc
 	exchangeMu           sync.Mutex
 
-	chatsListener    ChatsListener
-	messagesListener MessagesListener
-	userListener     UserListener
-	listenerMu       sync.RWMutex
-	syncCancel       context.CancelFunc
-	syncMu           sync.Mutex
+	chatsListener     ChatsListener
+	messagesListener  MessagesListener
+	userListener      UserListener
+	reconnectListener ReconnectListener
+	listenerMu        sync.RWMutex
+	syncCancel        context.CancelFunc
+	syncMu            sync.Mutex
+
+	wsConnected bool
+	wsMu        sync.Mutex
 }
 
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {
