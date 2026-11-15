@@ -42,10 +42,12 @@ func (c *BloomClient) Register() (*RegisterResult, error) {
 		return nil, err
 	}
 
+	rawRecoveryKeyHex := hex.EncodeToString(rawRecoveryKey)
+
 	err = c.saveCredentials(&domain.SavedCredentials{
-		UserID:      registerResponse.User.ID,
-		RecoveryKey: recoveryKey,
-		MasterKey:   masterKey,
+		UserID:         registerResponse.User.ID,
+		RawRecoveryKey: rawRecoveryKey,
+		MasterKey:      masterKey,
 		PublicKeys: *mappers.MapPublicKeys(
 			userIdentity.PublicKeys.MlKem768,
 			userIdentity.PublicKeys.X448,
@@ -68,7 +70,7 @@ func (c *BloomClient) Register() (*RegisterResult, error) {
 
 	return &RegisterResult{
 		UserJSON:       userBytes,
-		RawRecoveryKey: hex.EncodeToString(rawRecoveryKey),
+		RawRecoveryKey: rawRecoveryKeyHex,
 	}, nil
 }
 
@@ -129,9 +131,9 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 	}
 
 	err = c.saveCredentials(&domain.SavedCredentials{
-		UserID:      finishLoginResult.User.ID,
-		RecoveryKey: recoveryKeyBytes,
-		MasterKey:   masterKey,
+		UserID:         finishLoginResult.User.ID,
+		RawRecoveryKey: rawRecoveryKeyBytes,
+		MasterKey:      masterKey,
 		PublicKeys: *mappers.MapPublicKeys(
 			userIdentity.PublicKeys.MlKem768,
 			userIdentity.PublicKeys.X448,

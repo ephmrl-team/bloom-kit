@@ -7,9 +7,9 @@ type PublicKeys struct {
 }
 
 type SavedCredentials struct {
-	UserID      string `json:"user_id"`
-	RecoveryKey []byte `json:"recovery_key"`
-	MasterKey   []byte `json:"master_key"`
+	UserID         string `json:"user_id"`
+	RawRecoveryKey []byte `json:"raw_recovery_key"`
+	MasterKey      []byte `json:"master_key"`
 	PublicKeys
 	SecretKeys []byte `json:"secret_keys"`
 	UserJSON   []byte `json:"user_json"`

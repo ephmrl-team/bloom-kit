@@ -307,7 +307,7 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string
 				if exchangeType == "push" && pendingRecoveryKey {
 					pendingRecoveryKey = false
 
-					message, err := messages.Encrypt(chatKey, creds.RecoveryKey, syncKey, c.exchangeUserIdentity, recipientIdentity)
+					message, err := messages.Encrypt(chatKey, creds.RawRecoveryKey, syncKey, c.exchangeUserIdentity, recipientIdentity)
 					if err != nil {
 						return "", err
 					}
@@ -391,7 +391,7 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string
 					continue
 				}
 
-				return hex.EncodeToString(creds.RecoveryKey), nil
+				return hex.EncodeToString(creds.RawRecoveryKey), nil
 
 			case "exchange.ask_for_identity":
 				var event exchangeEvent
@@ -472,7 +472,7 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string
 					continue
 				}
 
-				message, err := messages.Encrypt(chatKey, creds.RecoveryKey, syncKey, c.exchangeUserIdentity, recipientIdentity)
+				message, err := messages.Encrypt(chatKey, creds.RawRecoveryKey, syncKey, c.exchangeUserIdentity, recipientIdentity)
 				if err != nil {
 					return "", err
 				}

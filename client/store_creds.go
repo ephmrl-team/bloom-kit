@@ -32,7 +32,7 @@ func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
 		return err
 	}
 
-	crypto.Zero(creds.RecoveryKey)
+	crypto.Zero(creds.RawRecoveryKey)
 	crypto.Zero(creds.MasterKey)
 	crypto.Zero(creds.SecretKeys)
 
