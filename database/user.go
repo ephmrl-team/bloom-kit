@@ -83,7 +83,7 @@ func (d *Database) GetUser(userID string) (*domain.User, error) {
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}

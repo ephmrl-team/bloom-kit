@@ -112,7 +112,7 @@ func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
 	err := row.Scan(&chat.ID, &membersJSON, &handshakeJSON, &encodedChatKey, &encodedSyncKey, &chat.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}

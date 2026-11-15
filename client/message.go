@@ -34,6 +34,19 @@ func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int
 	if err != nil {
 		return nil, err
 	}
+	if chat == nil {
+		if _, err := c.getChatsContext(ctx); err != nil {
+			return nil, err
+		}
+
+		chat, err = c.database.GetChat(chatID)
+		if err != nil {
+			return nil, err
+		}
+		if chat == nil {
+			return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
+		}
+	}
 
 	recipient, err := getChatRecipient(&domain.Chat{
 		RawChat: chat.RawChat,
@@ -238,6 +251,19 @@ func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *in
 	chat, err := c.database.GetChat(chatID)
 	if err != nil {
 		return nil, err
+	}
+	if chat == nil {
+		if _, err := c.getChatsContext(ctx); err != nil {
+			return nil, err
+		}
+
+		chat, err = c.database.GetChat(chatID)
+		if err != nil {
+			return nil, err
+		}
+		if chat == nil {
+			return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
+		}
 	}
 
 	recipient, err := getChatRecipient(&domain.Chat{

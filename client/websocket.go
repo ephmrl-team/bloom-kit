@@ -416,6 +416,16 @@ func (c *BloomClient) handleNewMessageEvent(messageEvent *MessageNewEvent) {
 	if err != nil {
 		return
 	}
+	if chat == nil {
+		if _, err := c.getChatsContext(context.Background()); err != nil {
+			return
+		}
+
+		chat, err = c.database.GetChat(messageEvent.ChatID)
+		if err != nil || chat == nil {
+			return
+		}
+	}
 
 	recipient, err := getChatRecipient(&domain.Chat{
 		RawChat: chat.RawChat,
