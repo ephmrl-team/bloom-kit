@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -115,18 +116,31 @@ func (c *BloomClient) UpdateCredentialsUserJSON(userJSON []byte) error {
 }
 
 func (c *BloomClient) ClearCredentials() {
+	c.CancelExchange()
 	c.stopWebSocket()
 	c.StopChatsSync()
 
-	filePath := filepath.Join(c.storagePath, "session.dat")
+	var clearErrs []error
 
-	_ = os.Remove(filePath)
+	filePath := filepath.Join(c.storagePath, "session.dat")
+	if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		clearErrs = append(clearErrs, fmt.Errorf("failed to remove session file: %w", err))
+	}
 
 	c.credentialsMu.Lock()
 	c.credentials = nil
 	c.credentialsMu.Unlock()
 
+	c.apiClient.SetToken("")
 	c.updateUser(nil)
 
-	c.apiClient.SetToken("")
+	if c.database != nil {
+		if err := c.database.ClearAll(); err != nil {
+			clearErrs = append(clearErrs, fmt.Errorf("failed to clear database: %w", err))
+		}
+	}
+
+	if len(clearErrs) > 0 {
+		c.reportBackgroundError(errors.Join(clearErrs...))
+	}
 }

@@ -82,19 +82,22 @@ func (c *BloomClient) UnregisterChatsListener() {
 
 func (c *BloomClient) StartChatsSync() {
 	c.syncMu.Lock()
-	defer c.syncMu.Unlock()
-
 	if c.syncCancel != nil {
+		c.syncMu.Unlock()
 		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	c.syncCancel = cancel
+	c.syncDone = done
+	c.syncMu.Unlock()
 
 	go func() {
+		defer close(done)
 		defer c.recoverBackground("chats-sync")
 
-		c.syncRemoteChats()
+		c.syncRemoteChats(ctx)
 
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
@@ -104,7 +107,7 @@ func (c *BloomClient) StartChatsSync() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				c.syncRemoteChats()
+				c.syncRemoteChats(ctx)
 			}
 		}
 	}()
@@ -112,11 +115,17 @@ func (c *BloomClient) StartChatsSync() {
 
 func (c *BloomClient) StopChatsSync() {
 	c.syncMu.Lock()
-	defer c.syncMu.Unlock()
+	cancel := c.syncCancel
+	done := c.syncDone
+	c.syncCancel = nil
+	c.syncDone = nil
+	if cancel != nil {
+		cancel()
+	}
+	c.syncMu.Unlock()
 
-	if c.syncCancel != nil {
-		c.syncCancel()
-		c.syncCancel = nil
+	if done != nil {
+		<-done
 	}
 }
 
@@ -263,6 +272,10 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 }
 
 func (c *BloomClient) getChats() (*[]ChatResponse, error) {
+	return c.getChatsContext(context.Background())
+}
+
+func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, error) {
 	if _, err := c.getCredentials(); err != nil {
 		return nil, err
 	}
@@ -277,7 +290,7 @@ func (c *BloomClient) getChats() (*[]ChatResponse, error) {
 		return nil, err
 	}
 
-	chats, err := c.chatManager.GetChats(context.Background())
+	chats, err := c.chatManager.GetChats(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -530,8 +543,8 @@ func (c *BloomClient) notifyChatsUpdated() {
 	listener.OnChatsUpdated(localChatsBytes)
 }
 
-func (c *BloomClient) syncRemoteChats() {
-	_, err := c.getChats()
+func (c *BloomClient) syncRemoteChats(ctx context.Context) {
+	_, err := c.getChatsContext(ctx)
 	if err != nil {
 		fmt.Println("error", err)
 		return

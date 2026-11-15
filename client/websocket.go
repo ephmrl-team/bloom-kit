@@ -69,15 +69,18 @@ func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
 	}
 
 	wsCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 
 	c.wsCancelMu.Lock()
 	if c.wsCancel != nil {
 		c.wsCancel()
 	}
 	c.wsCancel = cancel
+	c.wsDone = done
 	c.wsCancelMu.Unlock()
 
 	go func() {
+		defer close(done)
 		defer c.recoverBackground("websocket")
 		defer cancel()
 
@@ -112,11 +115,18 @@ func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
 
 func (c *BloomClient) stopWebSocket() {
 	c.wsCancelMu.Lock()
-	if c.wsCancel != nil {
-		c.wsCancel()
-		c.wsCancel = nil
+	cancel := c.wsCancel
+	done := c.wsDone
+	c.wsCancel = nil
+	c.wsDone = nil
+	if cancel != nil {
+		cancel()
 	}
 	c.wsCancelMu.Unlock()
+
+	if done != nil {
+		<-done
+	}
 
 	c.wsMu.Lock()
 	c.wsConnected = false

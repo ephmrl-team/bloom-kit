@@ -99,6 +99,39 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	return &Database{db: db}, nil
 }
 
+func (d *Database) ClearAll() error {
+	if d == nil || d.db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, table := range []string{
+		"messages",
+		"chat_sync_states",
+		"chats",
+		"users",
+	} {
+		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("failed to clear %s: %w", table, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	if _, err := d.db.Exec("VACUUM"); err != nil {
+		return fmt.Errorf("failed to vacuum database: %w", err)
+	}
+
+	return nil
+}
+
 func (d *Database) closeDatabase() {
 	if d.db != nil {
 		_ = d.db.Close()

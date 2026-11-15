@@ -65,11 +65,13 @@ type BloomClient struct {
 	backgroundErrorListener BackgroundErrorListener
 	listenerMu              sync.RWMutex
 	syncCancel              context.CancelFunc
+	syncDone                chan struct{}
 	syncMu                  sync.Mutex
 
 	wsConnected bool
 	wsMu        sync.Mutex
 	wsCancel    context.CancelFunc
+	wsDone      chan struct{}
 	wsCancelMu  sync.Mutex
 }
 
