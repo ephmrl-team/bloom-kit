@@ -90,8 +90,8 @@ func (c *BloomClient) GenerateExchangeFingerprint() string {
 	return base64.StdEncoding.EncodeToString(fingerprintBytes[:])
 }
 
-func (c *BloomClient) startExchangeSession(exchangeType string) (string, string, error) {
-	roomID, err := c.exchangeManager.StartSession(context.Background())
+func (c *BloomClient) startExchangeSession(ctx context.Context, exchangeType string) (string, string, error) {
+	roomID, err := c.exchangeManager.StartSession(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -114,7 +114,7 @@ func (c *BloomClient) CancelExchange() {
 	}
 }
 
-func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (recoveryKey string, err error) {
+func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerprint string) (recoveryKey string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			recoveryKey = ""
@@ -137,7 +137,7 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (recove
 		return "", errors.New("exchange session is not initialized")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(token.context())
 
 	c.exchangeMu.Lock()
 	c.exchangeCancel = cancel

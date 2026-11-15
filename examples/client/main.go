@@ -51,14 +51,14 @@ func main() {
 
 	bloomClient.RegisterUserListener(&UserHandler{})
 
-	registerResponse, err := bloomClient.Register()
+	registerResponse, err := bloomClient.Register(nil)
 	if err != nil {
 		panic(err)
 	}
 	// recoveryKey := ""
-	// a, err := bloomClient.Login(recoveryKey)
+	// a, err := bloomClient.Login(nil, recoveryKey)
 
-	// userJSON, err := bloomClient.GetMe()
+	// userJSON, err := bloomClient.GetMe(nil)
 	// if err != nil {
 	// 	panic(err)
 	// }
@@ -70,7 +70,7 @@ func main() {
 
 	fmt.Println(user.ID)
 
-	_, err = bloomClient.Login(registerResponse.RawRecoveryKey)
+	_, err = bloomClient.Login(nil, registerResponse.RawRecoveryKey)
 	if err != nil {
 		panic(err)
 	}
@@ -85,7 +85,7 @@ func main() {
 	// 	editUserRequest.Description = "description description coool"
 	// 	editUserRequest.HasDescription = true
 	//
-	// 	_, err = bloomClient.EditUser(editUserRequest)
+	// 	_, err = bloomClient.EditUser(nil, editUserRequest)
 	// 	if err != nil {
 	// 		panic(err)
 	// 	}
@@ -97,7 +97,7 @@ func main() {
 
 	// fmt.Println(roomID, fingerprint)
 
-	// recoveryKey, err := client.Exchange("push", roomID, fingerprint)
+	// recoveryKey, err := client.Exchange(nil, "push", roomID, fingerprint)
 	// if err != nil {
 	// 	panic(err)
 	// }

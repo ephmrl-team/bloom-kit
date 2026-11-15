@@ -21,14 +21,14 @@ type LoginResult struct {
 	UserJSON []byte `json:"user_json"`
 }
 
-func (c *BloomClient) Register() (*RegisterResult, error) {
+func (c *BloomClient) Register(token *CancelToken) (*RegisterResult, error) {
 	userIdentity, secret, rawRecoveryKey, recoveryKey, masterKey, lookupID, err := identity.GenerateIdentity()
 	if err != nil {
 		return nil, err
 	}
 	defer secret.Wipe()
 
-	registerResponse, err := c.authManager.Register(context.Background(), userIdentity, secret, masterKey, recoveryKey, lookupID)
+	registerResponse, err := c.authManager.Register(token.context(), userIdentity, secret, masterKey, recoveryKey, lookupID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (c *BloomClient) Register() (*RegisterResult, error) {
 	}, nil
 }
 
-func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
+func (c *BloomClient) Login(token *CancelToken, rawRecoveryKey string) (*LoginResult, error) {
 	rawRecoveryKeyBytes, err := hex.DecodeString(rawRecoveryKey)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 	}
 	defer crypto.Zero(recoveryKeyBytes)
 
-	beginLoginResponse, err := c.authManager.BeginLogin(context.Background(), lookupID)
+	beginLoginResponse, err := c.authManager.BeginLogin(token.context(), lookupID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 		return nil, err
 	}
 
-	finishLoginResult, masterKey, secretKeys, err := c.authManager.FinishLogin(context.Background(), beginLoginResponse, userIdentity, recoveryKeyBytes)
+	finishLoginResult, masterKey, secretKeys, err := c.authManager.FinishLogin(token.context(), beginLoginResponse, userIdentity, recoveryKeyBytes)
 	if err != nil {
 		return nil, err
 	}

@@ -21,13 +21,13 @@ type EditRequest struct {
 	HasDescription bool
 }
 
-func (c *BloomClient) GetMe() ([]byte, error) {
+func (c *BloomClient) GetMe(token *CancelToken) ([]byte, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
 		return nil, err
 	}
 
-	user, err := c.userManager.GetMe(context.Background())
+	user, err := c.userManager.GetMe(token.context())
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +58,8 @@ func (c *BloomClient) GetMe() ([]byte, error) {
 	return userBytes, nil
 }
 
-func (c *BloomClient) SearchUsers(query string) ([]byte, error) {
-	users, err := c.userManager.Search(context.Background(), query)
+func (c *BloomClient) SearchUsers(token *CancelToken, query string) ([]byte, error) {
+	users, err := c.userManager.Search(token.context(), query)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (c *BloomClient) SearchUsers(query string) ([]byte, error) {
 	return usersBytes, nil
 }
 
-func (c *BloomClient) EditUser(req *EditRequest) ([]byte, error) {
+func (c *BloomClient) EditUser(token *CancelToken, req *EditRequest) ([]byte, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (c *BloomClient) EditUser(req *EditRequest) ([]byte, error) {
 	}
 
 	editedUser, err := c.userManager.Edit(
-		context.Background(),
+		token.context(),
 		username,
 		displayName,
 		description,
@@ -141,8 +141,8 @@ func (c *BloomClient) EditUser(req *EditRequest) ([]byte, error) {
 	return editedUserBytes, nil
 }
 
-func (c *BloomClient) GetUser(userID string) ([]byte, error) {
-	user, err := c.userManager.Get(context.Background(), userID)
+func (c *BloomClient) GetUser(token *CancelToken, userID string) ([]byte, error) {
+	user, err := c.userManager.Get(token.context(), userID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,14 +170,14 @@ func (c *BloomClient) GetUser(userID string) ([]byte, error) {
 	return userBytes, nil
 }
 
-func (c *BloomClient) getOrFetchUser(userID string) (*domain.User, error) {
+func (c *BloomClient) getOrFetchUser(ctx context.Context, userID string) (*domain.User, error) {
 	user, err := c.database.GetUser(userID)
 	if err != nil {
 		return nil, err
 	}
 
 	if user == nil {
-		user, err = c.userManager.Get(context.Background(), userID)
+		user, err = c.userManager.Get(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -200,13 +200,13 @@ func (c *BloomClient) getOrFetchUser(userID string) (*domain.User, error) {
 	return user, nil
 }
 
-func (c *BloomClient) GetOrFetchMe() ([]byte, error) {
+func (c *BloomClient) GetOrFetchMe(token *CancelToken) ([]byte, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
 		return nil, err
 	}
 
-	user, err := c.getOrFetchUser(creds.UserID)
+	user, err := c.getOrFetchUser(token.context(), creds.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (c *BloomClient) RegisterUserListener(listener UserListener) {
 	c.userListener = listener
 	c.listenerMu.Unlock()
 
-	c.GetOrFetchMe()
+	c.GetOrFetchMe(nil)
 }
 
 func (c *BloomClient) UnregisterUserListener() {

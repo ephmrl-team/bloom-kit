@@ -22,12 +22,12 @@ type ChatResponse struct {
 	LastMessage *domain.DecryptedMessageWithReply `json:"last_message,omitempty"`
 }
 
-func (c *BloomClient) CreateChat(receiverUser *CreateChatRequest) ([]byte, error) {
+func (c *BloomClient) CreateChat(token *CancelToken, receiverUser *CreateChatRequest) ([]byte, error) {
 	if _, err := c.getCredentials(); err != nil {
 		return nil, err
 	}
 
-	createdChat, err := c.createChat(receiverUser)
+	createdChat, err := c.createChat(token.context(), receiverUser)
 	if err != nil {
 		return nil, err
 	}
@@ -35,12 +35,12 @@ func (c *BloomClient) CreateChat(receiverUser *CreateChatRequest) ([]byte, error
 	return json.Marshal(createdChat)
 }
 
-func (c *BloomClient) GetChats() ([]byte, error) {
+func (c *BloomClient) GetChats(token *CancelToken) ([]byte, error) {
 	if _, err := c.getCredentials(); err != nil {
 		return nil, err
 	}
 
-	chats, err := c.getChats()
+	chats, err := c.getChatsContext(token.context())
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func getChatRecipient(chat *domain.Chat, memberID string) (*domain.User, error) 
 	return recipient, nil
 }
 
-func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse, error) {
+func (c *BloomClient) createChat(ctx context.Context, receiverUser *CreateChatRequest) (*ChatResponse, error) {
 	if receiverUser == nil {
 		return nil, fmt.Errorf("%w: receiver request is nil", domain.ErrInvalidUserIdentity)
 	}
@@ -195,7 +195,7 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 	}
 	defer secretKeys.Wipe()
 
-	receiver, err := c.getOrFetchUser(receiverUser.UserID)
+	receiver, err := c.getOrFetchUser(ctx, receiverUser.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 		return nil, err
 	}
 
-	createdChat, chatKey, syncKey, err := c.chatManager.Create(context.Background(), sender, receiverIdentity, secretKeys)
+	createdChat, chatKey, syncKey, err := c.chatManager.Create(ctx, sender, receiverIdentity, secretKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -254,10 +254,6 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 	}
 
 	return &response, nil
-}
-
-func (c *BloomClient) getChats() (*[]ChatResponse, error) {
-	return c.getChatsContext(context.Background())
 }
 
 func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, error) {

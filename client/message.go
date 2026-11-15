@@ -24,7 +24,7 @@ func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.De
 	return mappers.MapDomainMessagesToDecrypted(messagesFromStorage), nil
 }
 
-func (c *BloomClient) getChatMessages(chatID, messageID int, direction messageManager.Direction) ([]domain.Message, error) {
+func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int, direction messageManager.Direction) ([]domain.Message, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (c *BloomClient) getChatMessages(chatID, messageID int, direction messageMa
 	}
 
 	messages, err := c.messageManager.GetMessages(
-		context.Background(),
+		ctx,
 		chatID,
 		messageID,
 		direction,
@@ -73,12 +73,12 @@ func (c *BloomClient) getChatMessages(chatID, messageID int, direction messageMa
 	return messages, nil
 }
 
-func (c *BloomClient) getChatMessagesBefore(chatID, beforeID int) ([]domain.Message, error) {
-	return c.getChatMessages(chatID, beforeID, messageManager.DirectionBefore)
+func (c *BloomClient) getChatMessagesBefore(ctx context.Context, chatID, beforeID int) ([]domain.Message, error) {
+	return c.getChatMessages(ctx, chatID, beforeID, messageManager.DirectionBefore)
 }
 
-func (c *BloomClient) getChatMessagesAfter(chatID, afterID int) ([]domain.Message, error) {
-	return c.getChatMessages(chatID, afterID, messageManager.DirectionAfter)
+func (c *BloomClient) getChatMessagesAfter(ctx context.Context, chatID, afterID int) ([]domain.Message, error) {
+	return c.getChatMessages(ctx, chatID, afterID, messageManager.DirectionAfter)
 }
 
 func (c *BloomClient) extendOldestContiguousID(chatID, messageID int) error {
@@ -110,8 +110,8 @@ func (c *BloomClient) saveLoadedMessages(chatID int, messages []domain.Message) 
 	return c.extendOldestContiguousID(chatID, messages[0].ID)
 }
 
-func (c *BloomClient) loadMessagesFromServer(chatID, beforeID int) ([]domain.Message, error) {
-	messages, err := c.getChatMessagesBefore(chatID, beforeID)
+func (c *BloomClient) loadMessagesFromServer(ctx context.Context, chatID, beforeID int) ([]domain.Message, error) {
+	messages, err := c.getChatMessagesBefore(ctx, chatID, beforeID)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (c *BloomClient) loadMessagesFromServer(chatID, beforeID int) ([]domain.Mes
 	return messages, nil
 }
 
-func (c *BloomClient) fillMessagesGap(chatID, afterID, stopBeforeID int) bool {
+func (c *BloomClient) fillMessagesGap(ctx context.Context, chatID, afterID, stopBeforeID int) bool {
 	if afterID <= 0 || stopBeforeID <= 0 || afterID >= stopBeforeID {
 		return false
 	}
@@ -131,7 +131,7 @@ func (c *BloomClient) fillMessagesGap(chatID, afterID, stopBeforeID int) bool {
 	cursor := afterID
 
 	for cursor < stopBeforeID {
-		page, err := c.getChatMessagesAfter(chatID, cursor)
+		page, err := c.getChatMessagesAfter(ctx, chatID, cursor)
 		if err != nil || len(page) == 0 {
 			return false
 		}
@@ -146,13 +146,13 @@ func (c *BloomClient) fillMessagesGap(chatID, afterID, stopBeforeID int) bool {
 	return true
 }
 
-func (c *BloomClient) loadInitialMessages(chatID int) ([]domain.Message, error) {
+func (c *BloomClient) loadInitialMessages(ctx context.Context, chatID int) ([]domain.Message, error) {
 	newestLocalMessage, err := c.database.GetChatLastMessage(chatID)
 	if err != nil {
 		return nil, err
 	}
 
-	messages, err := c.getChatMessagesAfter(chatID, 0)
+	messages, err := c.getChatMessagesAfter(ctx, chatID, 0)
 	if err != nil {
 		if newestLocalMessage == nil {
 			return nil, err
@@ -182,7 +182,7 @@ func (c *BloomClient) loadInitialMessages(chatID int) ([]domain.Message, error) 
 
 	gapFilled := false
 	if newestLocalMessage != nil && newestLocalMessage.ID < oldestMessageID {
-		gapFilled = c.fillMessagesGap(chatID, newestLocalMessage.ID, oldestMessageID)
+		gapFilled = c.fillMessagesGap(ctx, chatID, newestLocalMessage.ID, oldestMessageID)
 	}
 
 	if overlapsLocal {
@@ -200,7 +200,7 @@ func (c *BloomClient) loadInitialMessages(chatID int) ([]domain.Message, error) 
 	return messages, nil
 }
 
-func (c *BloomClient) loadMessagesAuto(chatID, beforeID int) ([]domain.Message, error) {
+func (c *BloomClient) loadMessagesAuto(ctx context.Context, chatID, beforeID int) ([]domain.Message, error) {
 	localMessages, err := c.database.GetMessages(chatID, beforeID, 20)
 	if err != nil {
 		return nil, err
@@ -226,10 +226,10 @@ func (c *BloomClient) loadMessagesAuto(chatID, beforeID int) ([]domain.Message, 
 		}
 	}
 
-	return c.loadMessagesFromServer(chatID, beforeID)
+	return c.loadMessagesFromServer(ctx, chatID, beforeID)
 }
 
-func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
+func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
 		return nil, err
@@ -257,7 +257,7 @@ func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*
 		return nil, err
 	}
 
-	message, err := c.messageManager.Send(context.Background(), content, chatID, replyToID, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
+	message, err := c.messageManager.Send(ctx, content, chatID, replyToID, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +293,7 @@ func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*
 	}, nil
 }
 
-func (c *BloomClient) SendMessage(chatID int, replyToID int, content string) ([]byte, error) {
+func (c *BloomClient) SendMessage(token *CancelToken, chatID int, replyToID int, content string) ([]byte, error) {
 	if _, err := c.getCredentials(); err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ func (c *BloomClient) SendMessage(chatID int, replyToID int, content string) ([]
 		replyToPtr = &replyToID
 	}
 
-	message, err := c.sendMessage(chatID, replyToPtr, content)
+	message, err := c.sendMessage(token.context(), chatID, replyToPtr, content)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ func (c *BloomClient) SendMessage(chatID int, replyToID int, content string) ([]
 	return json.Marshal(message)
 }
 
-func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
+func (c *BloomClient) LoadMessages(token *CancelToken, sourceType string, chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
 	if _, err := c.getCredentials(); err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]d
 	}
 
 	if beforeID <= 0 {
-		messages, err := c.loadInitialMessages(chatID)
+		messages, err := c.loadInitialMessages(token.context(), chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -330,7 +330,7 @@ func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]d
 	}
 
 	if sourceType == "server" {
-		messages, err := c.loadMessagesFromServer(chatID, beforeID)
+		messages, err := c.loadMessagesFromServer(token.context(), chatID, beforeID)
 		if err != nil {
 			return nil, err
 		}
@@ -338,7 +338,7 @@ func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]d
 		return mappers.MapDomainMessagesToDecrypted(messages), nil
 	}
 
-	messages, err := c.loadMessagesAuto(chatID, beforeID)
+	messages, err := c.loadMessagesAuto(token.context(), chatID, beforeID)
 	if err != nil {
 		return nil, err
 	}
@@ -346,13 +346,13 @@ func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]d
 	return mappers.MapDomainMessagesToDecrypted(messages), nil
 }
 
-func (c *BloomClient) SyncMessages(chatID, afterID int) ([]domain.DecryptedMessageWithReply, error) {
+func (c *BloomClient) SyncMessages(token *CancelToken, chatID, afterID int) ([]domain.DecryptedMessageWithReply, error) {
 	if _, err := c.getCredentials(); err != nil {
 		return nil, err
 	}
 
 	if afterID <= 0 {
-		messages, err := c.loadInitialMessages(chatID)
+		messages, err := c.loadInitialMessages(token.context(), chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -364,7 +364,7 @@ func (c *BloomClient) SyncMessages(chatID, afterID int) ([]domain.DecryptedMessa
 	cursor := afterID
 
 	for {
-		page, err := c.getChatMessagesAfter(chatID, cursor)
+		page, err := c.getChatMessagesAfter(token.context(), chatID, cursor)
 		if err != nil {
 			return nil, err
 		}

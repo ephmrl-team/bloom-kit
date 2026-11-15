@@ -3,9 +3,22 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
+	"time"
 
 	"resty.dev/v3"
+)
+
+const (
+	defaultDialTimeout           = 10 * time.Second
+	defaultTLSHandshakeTimeout   = 10 * time.Second
+	defaultResponseHeaderTimeout = 10 * time.Second
+	defaultClientTimeout         = 30 * time.Second
+	defaultRequestTimeout        = 30 * time.Second
+	defaultRetryCount            = 3
+	defaultRetryWaitTime         = 200 * time.Millisecond
+	defaultRetryMaxWaitTime      = 5 * time.Second
 )
 
 type ApiError struct {
@@ -25,9 +38,20 @@ type Client struct {
 }
 
 func NewClient(baseURL string) *Client {
-	restyClient := resty.New()
+	restyClient := resty.NewWithTransportSettings(&resty.TransportSettings{
+		DialerTimeout:         defaultDialTimeout,
+		TLSHandshakeTimeout:   defaultTLSHandshakeTimeout,
+		ResponseHeaderTimeout: defaultResponseHeaderTimeout,
+	})
 
 	restyClient.SetBaseURL(baseURL)
+	restyClient.SetTimeout(defaultClientTimeout)
+	restyClient.SetRetryWaitTime(defaultRetryWaitTime)
+	restyClient.SetRetryMaxWaitTime(defaultRetryMaxWaitTime)
+	restyClient.AddRetryConditions(
+		resty.RetryConditionStatusTooManyRequests,
+		resty.RetryConditionStatus5XX,
+	)
 
 	client := &Client{
 		httpClient: restyClient,
@@ -58,7 +82,20 @@ func (c *Client) getToken() string {
 }
 
 func Send[Req any, Resp any](ctx context.Context, c *Client, method, path string, body *Req) (*Resp, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultRequestTimeout)
+		defer cancel()
+	}
+
 	req := c.httpClient.R().SetContext(ctx)
+
+	if method == http.MethodGet {
+		req.SetRetryCount(defaultRetryCount)
+	}
 
 	if body != nil {
 		req.SetBody(body)
