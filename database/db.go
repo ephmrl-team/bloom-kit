@@ -71,6 +71,7 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	CREATE TABLE IF NOT EXISTS chat_sync_states (
 	    chat_id INTEGER PRIMARY KEY,
 	    oldest_contiguous_id INTEGER NOT NULL DEFAULT 0,
+	    newest_contiguous_id INTEGER NOT NULL DEFAULT 0,
 
 	    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
 	);
@@ -94,6 +95,28 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to create schema: %w", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT 1
+		FROM pragma_table_info('chat_sync_states')
+		WHERE name = 'newest_contiguous_id'
+	`)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to inspect chat_sync_states schema: %w", err)
+	}
+	hasNewestContiguousID := rows.Next()
+	rows.Close()
+
+	if !hasNewestContiguousID {
+		if _, err := db.Exec(`
+			ALTER TABLE chat_sync_states
+			ADD COLUMN newest_contiguous_id INTEGER NOT NULL DEFAULT 0
+		`); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to add newest_contiguous_id: %w", err)
+		}
 	}
 
 	return &Database{db: db}, nil

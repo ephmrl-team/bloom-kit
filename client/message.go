@@ -94,42 +94,50 @@ func (c *BloomClient) getChatMessagesAfter(ctx context.Context, chatID, afterID 
 	return c.getChatMessages(ctx, chatID, afterID, messageManager.DirectionAfter)
 }
 
-func (c *BloomClient) extendOldestContiguousID(chatID, messageID int) error {
-	if messageID <= 0 {
-		return nil
-	}
-
-	oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
-	if err != nil {
-		return err
-	}
-
-	if oldestContiguousID == 0 || messageID < oldestContiguousID {
-		oldestContiguousID = messageID
-	}
-
-	return c.database.SetChatOldestContiguousID(chatID, oldestContiguousID)
-}
-
-func (c *BloomClient) saveLoadedMessages(chatID int, messages []domain.Message) error {
-	if len(messages) == 0 {
-		return nil
-	}
-
-	if err := c.database.SaveMessages(messages); err != nil {
-		return err
-	}
-
-	return c.extendOldestContiguousID(chatID, messages[0].ID)
-}
-
 func (c *BloomClient) loadMessagesFromServer(ctx context.Context, chatID, beforeID int) ([]domain.Message, error) {
 	messages, err := c.getChatMessagesBefore(ctx, chatID, beforeID)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := c.saveLoadedMessages(chatID, messages); err != nil {
+	if len(messages) == 0 {
+		return messages, nil
+	}
+
+	if err := c.database.SaveMessages(messages); err != nil {
+		return nil, err
+	}
+
+	oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
+	if err != nil {
+		return nil, err
+	}
+	newestContiguousID, err := c.database.GetChatNewestContiguousID(chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	oldestMessageID := messages[0].ID
+	newestMessageID := messages[len(messages)-1].ID
+
+	if oldestContiguousID == 0 || newestContiguousID == 0 {
+		oldestContiguousID = oldestMessageID
+		newestContiguousID = newestMessageID
+	} else {
+		if oldestMessageID < oldestContiguousID &&
+			(beforeID == oldestContiguousID || newestMessageID >= oldestContiguousID) {
+			oldestContiguousID = oldestMessageID
+		}
+
+		if oldestMessageID <= newestContiguousID && newestMessageID > newestContiguousID {
+			newestContiguousID = newestMessageID
+		}
+	}
+
+	if err := c.database.SetChatOldestContiguousID(chatID, oldestContiguousID); err != nil {
+		return nil, err
+	}
+	if err := c.database.SetChatNewestContiguousID(chatID, newestContiguousID); err != nil {
 		return nil, err
 	}
 
@@ -154,23 +162,18 @@ func (c *BloomClient) fillMessagesGap(ctx context.Context, chatID, afterID, stop
 		}
 
 		cursor = page[len(page)-1].ID
+
+		if err := c.database.SetChatNewestContiguousID(chatID, cursor); err != nil {
+			return false
+		}
 	}
 
 	return true
 }
 
 func (c *BloomClient) loadInitialMessages(ctx context.Context, chatID int) ([]domain.Message, error) {
-	newestLocalMessage, err := c.database.GetChatLastMessage(chatID)
-	if err != nil {
-		return nil, err
-	}
-
 	messages, err := c.getChatMessagesAfter(ctx, chatID, 0)
 	if err != nil {
-		if newestLocalMessage == nil {
-			return nil, err
-		}
-
 		return c.database.GetMessages(chatID, 0, 20)
 	}
 
@@ -186,27 +189,42 @@ func (c *BloomClient) loadInitialMessages(ctx context.Context, chatID int) ([]do
 	if err != nil {
 		return nil, err
 	}
-
-	oldestMessageID := messages[0].ID
-
-	overlapsLocal := oldestContiguousID > 0 &&
-		newestLocalMessage != nil &&
-		newestLocalMessage.ID >= oldestMessageID
-
-	gapFilled := false
-	if newestLocalMessage != nil && newestLocalMessage.ID < oldestMessageID {
-		gapFilled = c.fillMessagesGap(ctx, chatID, newestLocalMessage.ID, oldestMessageID)
+	newestContiguousID, err := c.database.GetChatNewestContiguousID(chatID)
+	if err != nil {
+		return nil, err
 	}
 
-	if overlapsLocal {
+	oldestMessageID := messages[0].ID
+	newestMessageID := messages[len(messages)-1].ID
+
+	switch {
+	case oldestContiguousID == 0 || newestContiguousID == 0:
+		oldestContiguousID = oldestMessageID
+		newestContiguousID = newestMessageID
+	case oldestMessageID <= newestContiguousID && newestMessageID >= oldestContiguousID:
 		if oldestMessageID < oldestContiguousID {
 			oldestContiguousID = oldestMessageID
 		}
-	} else if !(gapFilled && oldestContiguousID > 0) {
-		oldestContiguousID = oldestMessageID
+		if newestMessageID > newestContiguousID {
+			newestContiguousID = newestMessageID
+		}
+	case oldestMessageID > newestContiguousID:
+		gapFilled := c.fillMessagesGap(ctx, chatID, newestContiguousID, oldestMessageID)
+
+		newestContiguousID, err = c.database.GetChatNewestContiguousID(chatID)
+		if err != nil {
+			return nil, err
+		}
+
+		if gapFilled && newestMessageID > newestContiguousID {
+			newestContiguousID = newestMessageID
+		}
 	}
 
 	if err := c.database.SetChatOldestContiguousID(chatID, oldestContiguousID); err != nil {
+		return nil, err
+	}
+	if err := c.database.SetChatNewestContiguousID(chatID, newestContiguousID); err != nil {
 		return nil, err
 	}
 
@@ -224,22 +242,30 @@ func (c *BloomClient) loadMessagesAuto(ctx context.Context, chatID, beforeID int
 		if err != nil {
 			return nil, err
 		}
-
-		newestLocalMessage, err := c.database.GetChatLastMessage(chatID)
+		newestContiguousID, err := c.database.GetChatNewestContiguousID(chatID)
 		if err != nil {
 			return nil, err
 		}
 
 		if oldestContiguousID > 0 &&
+			newestContiguousID >= oldestContiguousID &&
+			beforeID <= newestContiguousID &&
 			localMessages[0].ID >= oldestContiguousID &&
-			(len(localMessages) == 20 || localMessages[0].ID == oldestContiguousID) &&
-			newestLocalMessage != nil &&
-			beforeID <= newestLocalMessage.ID {
+			len(localMessages) == 20 {
 			return localMessages, nil
 		}
 	}
 
-	return c.loadMessagesFromServer(ctx, chatID, beforeID)
+	messages, err := c.loadMessagesFromServer(ctx, chatID, beforeID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(messages) == 0 {
+		return localMessages, nil
+	}
+
+	return messages, nil
 }
 
 func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {

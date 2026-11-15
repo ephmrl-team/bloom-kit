@@ -34,3 +34,33 @@ func (d *Database) SetChatOldestContiguousID(chatID, oldestContiguousID int) err
 
 	return err
 }
+
+func (d *Database) GetChatNewestContiguousID(chatID int) (int, error) {
+	row := d.db.QueryRow(`
+		SELECT newest_contiguous_id
+		FROM chat_sync_states
+		WHERE chat_id = ?
+	`, chatID)
+
+	var newestContiguousID int
+
+	if err := row.Scan(&newestContiguousID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	return newestContiguousID, nil
+}
+
+func (d *Database) SetChatNewestContiguousID(chatID, newestContiguousID int) error {
+	_, err := d.db.Exec(`
+		INSERT INTO chat_sync_states (chat_id, newest_contiguous_id)
+		VALUES (?, ?)
+		ON CONFLICT(chat_id) DO UPDATE SET
+			newest_contiguous_id = excluded.newest_contiguous_id
+	`, chatID, newestContiguousID)
+
+	return err
+}
