@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/slipe-fun/bloom-kit/domain"
 )
@@ -51,7 +52,10 @@ func (d *Database) SaveUsers(users []domain.User) error {
 	}
 	defer stmt.Close()
 
-	for _, user := range users {
+	var errs []error
+	for i := range users {
+		user := &users[i]
+
 		_, err := stmt.Exec(
 			user.ID,
 			user.Username,
@@ -63,11 +67,15 @@ func (d *Database) SaveUsers(users []domain.User) error {
 			user.Date,
 		)
 		if err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("save user %q (%s): %w", user.Username, user.ID, err))
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		errs = append(errs, fmt.Errorf("commit users: %w", err))
+	}
+
+	return errors.Join(errs...)
 }
 
 func (d *Database) GetUser(userID string) (*domain.User, error) {

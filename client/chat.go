@@ -431,16 +431,14 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 	}
 
 	if len(members) > 0 {
-		err = c.database.SaveUsers(members)
-		if err != nil {
-			return nil, err
+		if err := c.database.SaveUsers(members); err != nil {
+			fmt.Println("failed to save users:", err)
 		}
 	}
 
 	if len(messages) > 0 {
-		err = c.database.SaveMessages(messages)
-		if err != nil {
-			return nil, err
+		if err := c.database.SaveMessages(messages); err != nil {
+			fmt.Println("failed to save messages:", err)
 		}
 	}
 

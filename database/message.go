@@ -126,15 +126,20 @@ func (d *Database) SaveMessages(messages []domain.Message) error {
 	}
 	defer tx.Rollback()
 
+	var errs []error
 	for i := range messages {
 		msg := &messages[i]
 
 		if err := saveMessageTx(tx, msg); err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("save message %d (chat %d): %w", msg.ID, msg.ChatID, err))
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		errs = append(errs, fmt.Errorf("commit messages: %w", err))
+	}
+
+	return errors.Join(errs...)
 }
 
 func (d *Database) GetMessage(messageID int) (*domain.Message, error) {
