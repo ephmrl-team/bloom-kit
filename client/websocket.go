@@ -78,6 +78,7 @@ func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
 	c.wsCancelMu.Unlock()
 
 	go func() {
+		defer c.recoverBackground("websocket")
 		defer cancel()
 
 		backoff := time.Second
@@ -133,6 +134,8 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 	defer close(done)
 
 	go func() {
+		defer c.recoverBackground("websocket-close-watcher")
+
 		select {
 		case <-ctx.Done():
 			_ = conn.Close()

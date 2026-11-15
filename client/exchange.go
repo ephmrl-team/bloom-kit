@@ -104,7 +104,9 @@ func (c *BloomClient) startExchangeSession(exchangeType string) (string, string,
 		return "", "", err
 	}
 
-	c.generateExchangeSession(exchangeType)
+	if err := c.generateExchangeSession(exchangeType); err != nil {
+		return "", "", err
+	}
 
 	fingerprint := c.GenerateExchangeFingerprint()
 
@@ -120,11 +122,27 @@ func (c *BloomClient) CancelExchange() {
 	}
 }
 
-func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string, error) {
+func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (recoveryKey string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			recoveryKey = ""
+			err = fmt.Errorf("exchange panic: %v", r)
+		}
+	}()
+
 	isScanner := c.GenerateExchangeFingerprint() != fingerprint
 
 	if isScanner {
-		c.generateExchangeSession(exchangeType)
+		if err := c.generateExchangeSession(exchangeType); err != nil {
+			return "", err
+		}
+	}
+
+	c.exchangeMu.Lock()
+	initialized := c.exchangeUserIdentity != nil && c.exchangeSecretKeys != nil
+	c.exchangeMu.Unlock()
+	if !initialized {
+		return "", errors.New("exchange session is not initialized")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -400,6 +418,10 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string
 					continue
 				}
 
+				if creds == nil {
+					continue
+				}
+
 				return hex.EncodeToString(creds.RawRecoveryKey), nil
 
 			case "exchange.ask_for_identity":
@@ -463,6 +485,10 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string
 				}
 
 				if event.UserID == c.exchangeUserIdentity.ID {
+					continue
+				}
+
+				if creds == nil {
 					continue
 				}
 

@@ -58,13 +58,14 @@ type BloomClient struct {
 	exchangeCancel       context.CancelFunc
 	exchangeMu           sync.Mutex
 
-	chatsListener     ChatsListener
-	messagesListener  MessagesListener
-	userListener      UserListener
-	reconnectListener ReconnectListener
-	listenerMu        sync.RWMutex
-	syncCancel        context.CancelFunc
-	syncMu            sync.Mutex
+	chatsListener           ChatsListener
+	messagesListener        MessagesListener
+	userListener            UserListener
+	reconnectListener       ReconnectListener
+	backgroundErrorListener BackgroundErrorListener
+	listenerMu              sync.RWMutex
+	syncCancel              context.CancelFunc
+	syncMu                  sync.Mutex
 
 	wsConnected bool
 	wsMu        sync.Mutex

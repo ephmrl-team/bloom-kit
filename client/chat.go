@@ -92,6 +92,8 @@ func (c *BloomClient) StartChatsSync() {
 	c.syncCancel = cancel
 
 	go func() {
+		defer c.recoverBackground("chats-sync")
+
 		c.syncRemoteChats()
 
 		ticker := time.NewTicker(10 * time.Second)

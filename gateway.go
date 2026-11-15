@@ -6,6 +6,7 @@ package main
 typedef void (*chats_callback_t)(const char* json_data);
 typedef void (*user_callback_t)(const char* json_data);
 typedef void (*messages_callback_t)(const char* json_data);
+typedef void (*error_callback_t)(const char* json_data);
 
 static inline void call_chats_callback(chats_callback_t cb, const char* json_data) {
     if (cb != NULL) {
@@ -20,6 +21,12 @@ static inline void call_user_callback(user_callback_t cb, const char* json_data)
 }
 
 static inline void call_messages_callback(messages_callback_t cb, const char* json_data) {
+    if (cb != NULL) {
+        cb(json_data);
+    }
+}
+
+static inline void call_error_callback(error_callback_t cb, const char* json_data) {
     if (cb != NULL) {
         cb(json_data);
     }
@@ -384,6 +391,30 @@ func RegisterUserCallback(cb C.user_callback_t) {
 func UnregisterUserCallback() {
 	if globalClient != nil {
 		globalClient.UnregisterUserListener()
+	}
+}
+
+type cgoBackgroundErrorListener struct {
+	callback C.error_callback_t
+}
+
+func (l *cgoBackgroundErrorListener) OnBackgroundError(errorJSON []byte) {
+	cStr := C.CString(string(errorJSON))
+	defer C.free(unsafe.Pointer(cStr))
+	C.call_error_callback(l.callback, cStr)
+}
+
+//export RegisterErrorCallback
+func RegisterErrorCallback(cb C.error_callback_t) {
+	if globalClient != nil {
+		globalClient.RegisterBackgroundErrorListener(&cgoBackgroundErrorListener{callback: cb})
+	}
+}
+
+//export UnregisterErrorCallback
+func UnregisterErrorCallback() {
+	if globalClient != nil {
+		globalClient.UnregisterBackgroundErrorListener()
 	}
 }
 
