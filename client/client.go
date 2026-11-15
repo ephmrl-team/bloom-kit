@@ -80,6 +80,9 @@ type BloomClient struct {
 	wsCancelMu         sync.Mutex
 	wsHasConnected     bool
 	connectionListener ConnectionListener
+
+	lastChatsHash    [32]byte
+	hasLastChatsHash bool
 }
 
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {

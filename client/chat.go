@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -94,7 +95,7 @@ func (c *BloomClient) StartChatsSync() {
 
 		c.syncRemoteChats(ctx)
 
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -511,9 +512,9 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 }
 
 func (c *BloomClient) notifyChatsUpdated() {
-	c.listenerMu.Lock()
+	c.listenerMu.RLock()
 	listener := c.chatsListener
-	c.listenerMu.Unlock()
+	c.listenerMu.RUnlock()
 
 	if listener == nil {
 		return
@@ -524,6 +525,18 @@ func (c *BloomClient) notifyChatsUpdated() {
 		fmt.Println("error", err)
 		return
 	}
+
+	hash := sha256.Sum256(localChatsBytes)
+
+	c.listenerMu.Lock()
+	listener = c.chatsListener
+	if listener == nil || (c.hasLastChatsHash && c.lastChatsHash == hash) {
+		c.listenerMu.Unlock()
+		return
+	}
+	c.lastChatsHash = hash
+	c.hasLastChatsHash = true
+	c.listenerMu.Unlock()
 
 	listener.OnChatsUpdated(localChatsBytes)
 }
