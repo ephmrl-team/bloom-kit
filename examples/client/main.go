@@ -4,9 +4,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/slipe-fun/bloom-kit/client"
 	"github.com/slipe-fun/bloom-kit/domain"
@@ -27,12 +24,11 @@ func (h *UserHandler) OnUserUpdated(userJSON []byte) {
 	if err := json.Unmarshal(userJSON, &user); err != nil {
 		return
 	}
-
-	fmt.Println("User updated")
-	fmt.Println("User id:", user.ID)
-	fmt.Println("User username:", user.Username)
-	fmt.Println("User display name:", user.DisplayName)
-	fmt.Println("User description:", user.Description)
+	// fmt.Println("User updated")
+	// fmt.Println("User id:", user.ID)
+	// fmt.Println("User username:", user.Username)
+	// fmt.Println("User display name:", user.DisplayName)
+	// fmt.Println("User description:", user.Description)
 }
 
 func main() {
@@ -55,37 +51,44 @@ func main() {
 
 	bloomClient.RegisterUserListener(&UserHandler{})
 
-	// registerResponse, err := bloomClient.Login()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// recoveryKey := ""
-	// a, err := bloomClient.Login(recoveryKey)
-
-	userJSON, err := bloomClient.GetMe()
+	registerResponse, err := bloomClient.Register()
 	if err != nil {
 		panic(err)
 	}
+	// recoveryKey := ""
+	// a, err := bloomClient.Login(recoveryKey)
+
+	// userJSON, err := bloomClient.GetMe()
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	var user *domain.User
-	if err := json.Unmarshal(userJSON, &user); err != nil {
-		panic(err)
+	if err := json.Unmarshal(registerResponse.UserJSON, &user); err != nil {
+		// panic(err)
 	}
 
 	fmt.Println(user.ID)
 
-	editUserRequest := &client.EditRequest{}
-	editUserRequest.Username = "coolusername"
-	editUserRequest.HasUsername = true
-	editUserRequest.DisplayName = "cooldisplay"
-	editUserRequest.HasDisplayName = true
-	editUserRequest.Description = "description description coool"
-	editUserRequest.HasDescription = true
-
-	_, err = bloomClient.EditUser(editUserRequest)
+	_, err = bloomClient.Login(registerResponse.RawRecoveryKey)
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println(1)
+
+	// 	editUserRequest := &client.EditRequest{}
+	// 	editUserRequest.Username = "coolusername"
+	// 	editUserRequest.HasUsername = true
+	// 	editUserRequest.DisplayName = "cooldisplay"
+	// 	editUserRequest.HasDisplayName = true
+	// 	editUserRequest.Description = "description description coool"
+	// 	editUserRequest.HasDescription = true
+	//
+	// 	_, err = bloomClient.EditUser(editUserRequest)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
 
 	// roomID, fingerprint, err := client.StartExchangeSession("push")
 	// if err != nil {
@@ -101,8 +104,8 @@ func main() {
 
 	// fmt.Println(recoveryKey)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	<-stop
+	// stop := make(chan os.Signal, 1)
+	// signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	//
+	// <-stop
 }
