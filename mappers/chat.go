@@ -2,6 +2,7 @@ package mappers
 
 import (
 	"encoding/base64"
+	"fmt"
 
 	"github.com/slipe-fun/bloom-kit/domain"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
@@ -19,6 +20,17 @@ func MapHandshake(handshake *identity.HandshakePayload) *domain.Handshake {
 }
 
 func DecodeHandshake(handshake *domain.Handshake) (*identity.HandshakePayload, error) {
+	if handshake == nil {
+		return nil, domain.ErrHandshakeMissing
+	}
+
+	if handshake.ReceiverCipherText == "" ||
+		handshake.SenderEphemeralX448 == "" ||
+		handshake.EncryptedSyncKey.CipherText == "" ||
+		handshake.EncryptedSyncKey.Nonce == "" {
+		return nil, fmt.Errorf("%w: one or more fields are empty", domain.ErrHandshakeIncomplete)
+	}
+
 	receiverCiphertextBytes, err := base64.StdEncoding.DecodeString(handshake.ReceiverCipherText)
 	if err != nil {
 		return nil, err

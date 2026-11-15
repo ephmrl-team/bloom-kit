@@ -28,8 +28,8 @@ type ChatResponse struct {
 }
 
 func (c *BloomClient) CreateChat(receiverUser *CreateChatRequest) ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	createdChat, err := c.createChat(receiverUser)
@@ -41,8 +41,8 @@ func (c *BloomClient) CreateChat(receiverUser *CreateChatRequest) ([]byte, error
 }
 
 func (c *BloomClient) GetChats() ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	chats, err := c.getChats()
@@ -54,8 +54,8 @@ func (c *BloomClient) GetChats() ([]byte, error) {
 }
 
 func (c *BloomClient) GetLocalChats() ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	chats, err := c.getLocalChats()
@@ -119,20 +119,58 @@ func (c *BloomClient) StopChatsSync() {
 }
 
 func getChatOtherMember(chat *domain.Chat, memberID string) *domain.User {
-	if chat.Members != nil {
-		for _, member := range *chat.Members {
-			if member.ID != memberID {
-				return &member
-			}
+	if chat == nil || chat.Members == nil {
+		return nil
+	}
+
+	for i := range *chat.Members {
+		member := &(*chat.Members)[i]
+		if member.ID == "" {
+			continue
+		}
+		if member.ID != memberID {
+			return member
 		}
 	}
 
 	return nil
 }
 
+func getChatRecipient(chat *domain.Chat, memberID string) (*domain.User, error) {
+	if chat == nil {
+		return nil, domain.ErrInvalidChat
+	}
+
+	if memberID == "" {
+		return nil, domain.ErrNotAuthenticated
+	}
+
+	if chat.Type != "" && chat.Type != "private" {
+		return nil, fmt.Errorf("%w: %s", domain.ErrUnsupportedChatType, chat.Type)
+	}
+
+	if chat.Members != nil && len(*chat.Members) > 2 {
+		return nil, fmt.Errorf("%w: chat has %d members", domain.ErrUnsupportedChatType, len(*chat.Members))
+	}
+
+	recipient := getChatOtherMember(chat, memberID)
+	if recipient == nil {
+		return nil, domain.ErrChatRecipientNotFound
+	}
+
+	return recipient, nil
+}
+
 func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if receiverUser == nil {
+		return nil, fmt.Errorf("%w: receiver request is nil", domain.ErrInvalidUserIdentity)
+	}
+	if receiverUser.UserID == "" {
+		return nil, fmt.Errorf("%w: receiver user ID is empty", domain.ErrInvalidUserIdentity)
+	}
+
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	creds, err := c.loadCredentials()
@@ -140,7 +178,7 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 		return nil, err
 	}
 
-	publicKeys, err := mappers.UnmapPublicKeys(&creds.PublicKeys)
+	sender, err := mappers.ConvertCredentialsToUser(creds)
 	if err != nil {
 		return nil, err
 	}
@@ -159,10 +197,8 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 	if err != nil {
 		return nil, err
 	}
-
-	sender := identity.User{
-		ID:         creds.UserID,
-		PublicKeys: *publicKeys,
+	if len(receiverPublicKeys.MlKem768) == 0 || len(receiverPublicKeys.X448) == 0 || len(receiverPublicKeys.Ed448) == 0 {
+		return nil, fmt.Errorf("%w: receiver has empty public keys", domain.ErrInvalidUserIdentity)
 	}
 
 	receiver := identity.User{
@@ -174,9 +210,12 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 		},
 	}
 
-	createdChat, chatKey, syncKey, err := c.chatManager.Create(context.Background(), &sender, &receiver, secretKeys)
+	createdChat, chatKey, syncKey, err := c.chatManager.Create(context.Background(), sender, &receiver, secretKeys)
 	if err != nil {
 		return nil, err
+	}
+	if createdChat == nil {
+		return nil, domain.ErrInvalidChat
 	}
 
 	err = c.database.SaveChat(*createdChat, chatKey, syncKey)
@@ -184,12 +223,20 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 		return nil, err
 	}
 
-	me := creds.UserJSON
+	recipient, err := getChatRecipient(createdChat, creds.UserID)
+	if err != nil {
+		if !errors.Is(err, domain.ErrChatRecipientNotFound) {
+			return nil, err
+		}
 
-	recipient := getChatOtherMember(createdChat, c.credentials.UserID)
-	if recipient == nil {
-		return nil, errors.New("no chat recipient")
+		recipient = &domain.User{
+			ID:             receiverUser.UserID,
+			MlKemPublicKey: receiverUser.MlKem768PublicKey,
+			EcdhPublicKey:  receiverUser.X448PublicKey,
+			EdPublicKey:    receiverUser.Ed448PublicKey,
+		}
 	}
+
 	recipientJSON, err := json.Marshal(recipient)
 	if err != nil {
 		return nil, err
@@ -197,11 +244,15 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 
 	response := ChatResponse{
 		RawChat:   createdChat.RawChat,
-		Me:        me,
+		Me:        creds.UserJSON,
 		Recipient: recipientJSON,
 	}
 
-	err = c.database.SaveUsers(*createdChat.Members)
+	if createdChat.Members != nil && len(*createdChat.Members) > 0 {
+		err = c.database.SaveUsers(*createdChat.Members)
+	} else {
+		err = c.database.SaveUser(recipient)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -210,8 +261,8 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 }
 
 func (c *BloomClient) getChats() (*[]ChatResponse, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	creds, err := c.loadCredentials()
@@ -219,23 +270,17 @@ func (c *BloomClient) getChats() (*[]ChatResponse, error) {
 		return nil, err
 	}
 
-	publicKeys, err := mappers.UnmapPublicKeys(&c.credentials.PublicKeys)
+	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
 	if err != nil {
 		return nil, err
-	}
-
-	userIdentity := &identity.User{
-		ID: c.credentials.UserID,
-		PublicKeys: identity.PublicKeys{
-			MlKem768: publicKeys.MlKem768,
-			X448:     publicKeys.X448,
-			Ed448:    publicKeys.Ed448,
-		},
 	}
 
 	chats, err := c.chatManager.GetChats(context.Background())
 	if err != nil {
 		return nil, err
+	}
+	if chats == nil {
+		return &[]ChatResponse{}, nil
 	}
 
 	localChats, err := c.database.GetChats()
@@ -260,11 +305,15 @@ func (c *BloomClient) getChats() (*[]ChatResponse, error) {
 		chat := &chatsSlice[i]
 		chatsMap[chat.ID] = chat
 
-		recipient := getChatOtherMember(chat, c.credentials.UserID)
-		if recipient == nil {
+		recipient, err := getChatRecipient(chat, creds.UserID)
+		if err != nil {
 			continue
 		}
-		recipientIdentity := mappers.ConvertUserToIdentity(recipient)
+
+		recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+		if err != nil {
+			continue
+		}
 
 		members = append(members, *recipient)
 		ids = append(ids, chat.ID)
@@ -276,7 +325,7 @@ func (c *BloomClient) getChats() (*[]ChatResponse, error) {
 
 		newChatObject := ChatResponse{
 			RawChat:   chat.RawChat,
-			Me:        c.credentials.UserJSON,
+			Me:        creds.UserJSON,
 			Recipient: recipientJSON,
 		}
 
@@ -330,12 +379,15 @@ func (c *BloomClient) getChats() (*[]ChatResponse, error) {
 			continue
 		}
 
-		recipient := getChatOtherMember(chat, c.credentials.UserID)
-		if recipient == nil {
+		recipient, err := getChatRecipient(chat, creds.UserID)
+		if err != nil {
 			continue
 		}
 
-		recipientIdentity := mappers.ConvertUserToIdentity(recipient)
+		recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+		if err != nil {
+			continue
+		}
 
 		handshakePayload, err := mappers.DecodeHandshake(chat.Handshake)
 		if err != nil {
@@ -399,8 +451,9 @@ func (c *BloomClient) getChats() (*[]ChatResponse, error) {
 }
 
 func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	creds, err := c.getCredentials()
+	if err != nil {
+		return nil, err
 	}
 
 	chats, err := c.database.GetChats()
@@ -426,10 +479,10 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 	for i := range chats {
 		chat := &chats[i]
 
-		recipient := getChatOtherMember(&domain.Chat{
+		recipient, err := getChatRecipient(&domain.Chat{
 			RawChat: chat.RawChat,
-		}, c.credentials.UserID)
-		if recipient == nil {
+		}, creds.UserID)
+		if err != nil {
 			continue
 		}
 
@@ -446,7 +499,7 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 
 		newChatObject := ChatResponse{
 			RawChat:     chat.RawChat,
-			Me:          c.credentials.UserJSON,
+			Me:          creds.UserJSON,
 			Recipient:   recipientJSON,
 			LastMessage: lastMessage,
 		}

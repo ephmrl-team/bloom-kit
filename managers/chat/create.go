@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	"github.com/slipe-fun/bloom-kit/crypto"
@@ -38,6 +39,10 @@ func (c *ChatManager) CreateGroup(
 	title string,
 	users *[]domain.User,
 ) (*domain.Chat, []byte, error) {
+	if users == nil {
+		return nil, nil, errors.New("users are nil")
+	}
+
 	groupKey := random.GetRandomBytes(32)
 
 	var members []domain.GroupMemberRequest
@@ -46,8 +51,8 @@ func (c *ChatManager) CreateGroup(
 		users := *users
 		user := users[i]
 
-		recipientIdentity := mappers.ConvertUserToIdentity(&user)
-		if recipientIdentity == nil {
+		recipientIdentity, err := mappers.ConvertUserToIdentity(&user)
+		if err != nil {
 			continue
 		}
 

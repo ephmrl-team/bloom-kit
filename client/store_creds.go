@@ -11,6 +11,10 @@ import (
 )
 
 func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
+	if creds == nil {
+		return errors.New("credentials are nil")
+	}
+
 	plainText, err := json.Marshal(creds)
 	if err != nil {
 		return err
@@ -36,9 +40,23 @@ func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
 	crypto.Zero(creds.MasterKey)
 	crypto.Zero(creds.SecretKeys)
 
+	c.credentialsMu.Lock()
 	c.credentials = creds
+	c.credentialsMu.Unlock()
 
 	return nil
+}
+
+func (c *BloomClient) getCredentials() (*domain.SavedCredentials, error) {
+	c.credentialsMu.RLock()
+	creds := c.credentials
+	c.credentialsMu.RUnlock()
+
+	if creds == nil {
+		return nil, domain.ErrNotAuthenticated
+	}
+
+	return creds, nil
 }
 
 func (c *BloomClient) loadCredentials() (*domain.SavedCredentials, error) {
@@ -65,6 +83,7 @@ func (c *BloomClient) loadCredentials() (*domain.SavedCredentials, error) {
 		return nil, err
 	}
 
+	c.credentialsMu.Lock()
 	c.credentials = &domain.SavedCredentials{
 		UserID: creds.UserID,
 		PublicKeys: domain.PublicKeys{
@@ -75,6 +94,7 @@ func (c *BloomClient) loadCredentials() (*domain.SavedCredentials, error) {
 		UserJSON: creds.UserJSON,
 		Token:    creds.Token,
 	}
+	c.credentialsMu.Unlock()
 
 	return &creds, nil
 }
@@ -95,11 +115,16 @@ func (c *BloomClient) UpdateCredentialsUserJSON(userJSON []byte) error {
 }
 
 func (c *BloomClient) ClearCredentials() {
+	c.stopWebSocket()
+	c.StopChatsSync()
+
 	filePath := filepath.Join(c.storagePath, "session.dat")
 
 	_ = os.Remove(filePath)
 
+	c.credentialsMu.Lock()
 	c.credentials = nil
+	c.credentialsMu.Unlock()
 
 	c.updateUser(nil)
 

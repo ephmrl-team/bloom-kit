@@ -58,10 +58,11 @@ func InitClient(baseURL, wsURL, storagePath *C.char, encKey *C.uchar, keyLen C.i
 	goStorage := C.GoString(storagePath)
 	goKey := C.GoBytes(unsafe.Pointer(encKey), keyLen)
 
-	globalClient = client.NewClient(goBaseURL, goWsURL, goStorage, goKey)
-	if err := globalClient.Initialize(); err != nil {
+	newClient := client.NewClient(goBaseURL, goWsURL, goStorage, goKey)
+	if err := newClient.Initialize(); err != nil {
 		return makeErrorJSON(err)
 	}
+	globalClient = newClient
 	return nil
 }
 
@@ -247,13 +248,7 @@ func SendMessage(chatID C.int, replyToID C.int, content *C.char) *C.char {
 	}
 	goContent := C.GoString(content)
 
-	var replyPtr *int
-	if replyToID >= 0 {
-		rID := int(replyToID)
-		replyPtr = &rID
-	}
-
-	res, err := globalClient.SendMessage(int(chatID), *replyPtr, goContent)
+	res, err := globalClient.SendMessage(int(chatID), int(replyToID), goContent)
 	if err != nil {
 		return makeErrorJSON(err)
 	}

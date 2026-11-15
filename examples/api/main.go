@@ -56,7 +56,10 @@ func main() {
 
 	fmt.Println("Receiver user ID:", receiver.ID)
 
-	receiverIdentity := mappers.ConvertUserToIdentity(receiver)
+	receiverIdentity, err := mappers.ConvertUserToIdentity(receiver)
+	if err != nil {
+		panic(err)
+	}
 
 	// users, err := userManager.GetByIDs(ctx, []string{"BrPdQeHtrxAQd7", "785U93QXDWJcmc"})
 	// if err != nil {

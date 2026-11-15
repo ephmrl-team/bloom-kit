@@ -2,6 +2,7 @@ package mappers
 
 import (
 	"encoding/base64"
+	"fmt"
 
 	"github.com/slipe-fun/bloom-kit/domain"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
@@ -17,6 +18,10 @@ func MapPublicKeys(mlKem768, x448, ed448 []byte) *domain.PublicKeys {
 }
 
 func MapSecretKeys(secretKeys *identity.SecretKeys) (*[]byte, error) {
+	if secretKeys == nil {
+		return nil, domain.ErrNilSecretKeys
+	}
+
 	packSecretKeys, err := secretKeys.Pack()
 	if err != nil {
 		return nil, err
@@ -30,6 +35,10 @@ func UnmapSecretKeys(mappedSecretKeys []byte) (*identity.SecretKeys, error) {
 }
 
 func UnmapPublicKeys(publicKeys *domain.PublicKeys) (*identity.PublicKeys, error) {
+	if publicKeys == nil {
+		return nil, domain.ErrNilPublicKeys
+	}
+
 	mlKem768Bytes, err := base64.StdEncoding.DecodeString(publicKeys.MlKem768)
 	if err != nil {
 		return nil, err
@@ -52,14 +61,26 @@ func UnmapPublicKeys(publicKeys *domain.PublicKeys) (*identity.PublicKeys, error
 	}, nil
 }
 
-func ConvertUserToIdentity(user *domain.User) *identity.User {
+func ConvertUserToIdentity(user *domain.User) (*identity.User, error) {
+	if user == nil {
+		return nil, domain.ErrNilUser
+	}
+
+	if user.ID == "" {
+		return nil, fmt.Errorf("%w: user ID is empty", domain.ErrIncompleteUser)
+	}
+
 	publicKeys, err := UnmapPublicKeys(&domain.PublicKeys{
 		MlKem768: user.MlKemPublicKey,
 		X448:     user.EcdhPublicKey,
 		Ed448:    user.EdPublicKey,
 	})
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to decode public keys for user %s: %w", user.ID, err)
+	}
+
+	if len(publicKeys.MlKem768) == 0 || len(publicKeys.X448) == 0 || len(publicKeys.Ed448) == 0 {
+		return nil, fmt.Errorf("%w: user %s has empty public keys", domain.ErrIncompleteUser, user.ID)
 	}
 
 	return &identity.User{
@@ -69,7 +90,31 @@ func ConvertUserToIdentity(user *domain.User) *identity.User {
 			X448:     publicKeys.X448,
 			Ed448:    publicKeys.Ed448,
 		},
+	}, nil
+}
+
+func ConvertCredentialsToUser(creds *domain.SavedCredentials) (*identity.User, error) {
+	if creds == nil {
+		return nil, domain.ErrNotAuthenticated
 	}
+
+	if creds.UserID == "" {
+		return nil, fmt.Errorf("%w: current user ID is empty", domain.ErrInvalidUserIdentity)
+	}
+
+	publicKeys, err := UnmapPublicKeys(&creds.PublicKeys)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to decode current user public keys: %w", domain.ErrInvalidUserIdentity, err)
+	}
+
+	if len(publicKeys.MlKem768) == 0 || len(publicKeys.X448) == 0 || len(publicKeys.Ed448) == 0 {
+		return nil, fmt.Errorf("%w: current user has empty public keys", domain.ErrInvalidUserIdentity)
+	}
+
+	return &identity.User{
+		ID:         creds.UserID,
+		PublicKeys: *publicKeys,
+	}, nil
 }
 
 func MapEncryptedGroupKey(encryptedGroupKey *messages.EncryptedMessage) *domain.EncryptedGroupKey {

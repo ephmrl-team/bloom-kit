@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/slipe-fun/bloom-kit/crypto"
 	"github.com/slipe-fun/bloom-kit/domain"
 	"github.com/slipe-fun/bloom-kit/mappers"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
@@ -84,6 +85,7 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer crypto.Zero(recoveryKeyBytes)
 
 	beginLoginResponse, err := c.authManager.BeginLogin(context.Background(), lookupID)
 	if err != nil {

@@ -48,6 +48,7 @@ type BloomClient struct {
 	chatManager     *chatManager.ChatManager
 	messageManager  *messageManager.MessageManager
 	credentials     *domain.SavedCredentials
+	credentialsMu   sync.RWMutex
 	database        *database.Database
 	storagePath     string
 	encryptionKey   []byte
@@ -67,6 +68,8 @@ type BloomClient struct {
 
 	wsConnected bool
 	wsMu        sync.Mutex
+	wsCancel    context.CancelFunc
+	wsCancelMu  sync.Mutex
 }
 
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {
@@ -102,14 +105,14 @@ func (c *BloomClient) Initialize() error {
 		return err
 	}
 	c.database = db
-	_, err = c.loadCredentials()
+	creds, err := c.loadCredentials()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("failed to load credentials: %w", err)
 	}
-	c.SetToken(c.credentials.Token)
+	c.SetToken(creds.Token)
 	c.startWebSocket(context.Background(), c.wsURL)
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -65,6 +66,14 @@ func (c *BloomClient) generateExchangeSession(exchangeType string) error {
 		return err
 	}
 
+	if exchangeType == "push" {
+		creds, err := c.getCredentials()
+		if err != nil {
+			return err
+		}
+		userIdentity.ID = creds.UserID
+	}
+
 	c.exchangeMu.Lock()
 	if c.exchangeSecretKeys != nil {
 		c.exchangeSecretKeys.Wipe()
@@ -72,9 +81,6 @@ func (c *BloomClient) generateExchangeSession(exchangeType string) error {
 	}
 	c.exchangeSecretKeys = secretKeys
 	c.exchangeUserIdentity = userIdentity
-	if exchangeType == "push" {
-		c.exchangeUserIdentity.ID = c.credentials.UserID
-	}
 	c.exchangeMu.Unlock()
 
 	return nil
@@ -150,6 +156,9 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (string
 		creds, err = c.loadCredentials()
 		if err != nil {
 			return "", fmt.Errorf("failed to load credentials for push exchange: %w", err)
+		}
+		if len(creds.RawRecoveryKey) != 16 {
+			return "", errors.New("invalid raw recovery key length")
 		}
 	}
 

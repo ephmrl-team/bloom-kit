@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/slipe-fun/bloom-kit/domain"
@@ -12,8 +12,8 @@ import (
 )
 
 func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	messagesFromStorage, err := c.database.GetMessages(chatID, beforeID, 20)
@@ -25,8 +25,9 @@ func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.De
 }
 
 func (c *BloomClient) getChatMessages(chatID, messageID int, direction messageManager.Direction) ([]domain.Message, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	creds, err := c.getCredentials()
+	if err != nil {
+		return nil, err
 	}
 
 	chat, err := c.database.GetChat(chatID)
@@ -34,15 +35,22 @@ func (c *BloomClient) getChatMessages(chatID, messageID int, direction messageMa
 		return nil, err
 	}
 
-	recipient := getChatOtherMember(&domain.Chat{
+	recipient, err := getChatRecipient(&domain.Chat{
 		RawChat: chat.RawChat,
-	}, c.credentials.UserID)
-	recipientIdentity := mappers.ConvertUserToIdentity(recipient)
+	}, creds.UserID)
+	if err != nil {
+		return nil, err
+	}
 
-	user := getChatOtherMember(&domain.Chat{
-		RawChat: chat.RawChat,
-	}, recipient.ID)
-	userIdentity := mappers.ConvertUserToIdentity(user)
+	recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to build recipient identity: %w", domain.ErrInvalidUserIdentity, err)
+	}
+
+	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
+	if err != nil {
+		return nil, err
+	}
 
 	messages, err := c.messageManager.GetMessages(
 		context.Background(),
@@ -222,8 +230,9 @@ func (c *BloomClient) loadMessagesAuto(chatID, beforeID int) ([]domain.Message, 
 }
 
 func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	creds, err := c.getCredentials()
+	if err != nil {
+		return nil, err
 	}
 
 	chat, err := c.database.GetChat(chatID)
@@ -231,15 +240,22 @@ func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*
 		return nil, err
 	}
 
-	recipient := getChatOtherMember(&domain.Chat{
+	recipient, err := getChatRecipient(&domain.Chat{
 		RawChat: chat.RawChat,
-	}, c.credentials.UserID)
-	recipientIdentity := mappers.ConvertUserToIdentity(recipient)
+	}, creds.UserID)
+	if err != nil {
+		return nil, err
+	}
 
-	user := getChatOtherMember(&domain.Chat{
-		RawChat: chat.RawChat,
-	}, recipient.ID)
-	userIdentity := mappers.ConvertUserToIdentity(user)
+	recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to build recipient identity: %w", domain.ErrInvalidUserIdentity, err)
+	}
+
+	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
+	if err != nil {
+		return nil, err
+	}
 
 	message, err := c.messageManager.Send(context.Background(), content, chatID, replyToID, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
 	if err != nil {
@@ -278,8 +294,8 @@ func (c *BloomClient) sendMessage(chatID int, replyToID *int, content string) (*
 }
 
 func (c *BloomClient) SendMessage(chatID int, replyToID int, content string) ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	var replyToPtr *int
@@ -296,8 +312,8 @@ func (c *BloomClient) SendMessage(chatID int, replyToID int, content string) ([]
 }
 
 func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	if sourceType == "storage" {
@@ -331,8 +347,8 @@ func (c *BloomClient) LoadMessages(sourceType string, chatID, beforeID int) ([]d
 }
 
 func (c *BloomClient) SyncMessages(chatID, afterID int) ([]domain.DecryptedMessageWithReply, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	if afterID <= 0 {

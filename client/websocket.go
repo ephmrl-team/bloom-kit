@@ -63,19 +63,40 @@ func (m *MessageNewEvent) UnmarshalJSON(data []byte) error {
 }
 
 func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
+	creds, err := c.getCredentials()
+	if err != nil || creds.Token == "" {
+		return
+	}
+
+	wsCtx, cancel := context.WithCancel(ctx)
+
+	c.wsCancelMu.Lock()
+	if c.wsCancel != nil {
+		c.wsCancel()
+	}
+	c.wsCancel = cancel
+	c.wsCancelMu.Unlock()
+
 	go func() {
+		defer cancel()
+
 		backoff := time.Second
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-wsCtx.Done():
 				return
 			case <-time.After(backoff):
 			}
 
+			creds, err := c.getCredentials()
+			if err != nil || creds.Token == "" {
+				return
+			}
+
 			startedAt := time.Now()
 
-			err := c.connectAndListen(ctx, fmt.Sprintf("%s?token=%s", wsURL, c.credentials.Token))
+			err = c.connectAndListen(wsCtx, fmt.Sprintf("%s?token=%s", wsURL, creds.Token))
 			if err != nil && time.Since(startedAt) < 5*time.Second {
 				if backoff < 30*time.Second {
 					backoff *= 2
@@ -88,12 +109,36 @@ func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
 	}()
 }
 
+func (c *BloomClient) stopWebSocket() {
+	c.wsCancelMu.Lock()
+	if c.wsCancel != nil {
+		c.wsCancel()
+		c.wsCancel = nil
+	}
+	c.wsCancelMu.Unlock()
+
+	c.wsMu.Lock()
+	c.wsConnected = false
+	c.wsMu.Unlock()
+}
+
 func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return fmt.Errorf("websocket dial error: %w", err)
 	}
 	defer conn.Close()
+
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
 
 	if c.isReconnect() {
 		c.notifyReconnect()
@@ -170,6 +215,10 @@ func (c *BloomClient) UnregisterReconnectListener() {
 }
 
 func (c *BloomClient) handleNewChatEvent(chatEvent *ChatNewEvent) {
+	if chatEvent == nil {
+		return
+	}
+
 	chat := chatEvent.Chat
 
 	if chat.Handshake == nil && chatEvent.Handshake != nil {
@@ -181,31 +230,46 @@ func (c *BloomClient) handleNewChatEvent(chatEvent *ChatNewEvent) {
 		return
 	}
 
-	var me *domain.User
-	if err = json.Unmarshal(c.credentials.UserJSON, &me); err != nil {
-		return
-	}
-
-	userIdentity := mappers.ConvertUserToIdentity(me)
-	secretKeys, err := mappers.UnmapSecretKeys(creds.SecretKeys)
+	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
 	if err != nil {
 		return
 	}
-	defer secretKeys.Wipe()
 
-	switch chatEvent.ChatType {
+	if existing, err := c.database.GetChat(chat.ID); err == nil && existing != nil && len(existing.ChatKey) > 0 {
+		if recipient := getChatOtherMember(&chat, creds.UserID); recipient != nil {
+			_ = c.database.SaveUser(recipient)
+		}
+		c.notifyChatsUpdated()
+		return
+	}
+
+	chatType := chatEvent.ChatType
+	if chatType == "" {
+		chatType = chat.Type
+	}
+
+	switch chatType {
 	case "private":
-		recipient := getChatOtherMember(&chat, c.credentials.UserID)
-		if recipient == nil {
+		recipient, err := getChatRecipient(&chat, creds.UserID)
+		if err != nil {
 			return
 		}
 
-		recipientIdentity := mappers.ConvertUserToIdentity(recipient)
+		recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+		if err != nil {
+			return
+		}
 
 		handshakePayload, err := mappers.DecodeHandshake(chat.Handshake)
 		if err != nil {
 			return
 		}
+
+		secretKeys, err := mappers.UnmapSecretKeys(creds.SecretKeys)
+		if err != nil {
+			return
+		}
+		defer secretKeys.Wipe()
 
 		chatKey, syncKey, err := identity.FinalizeKeyExchange(handshakePayload, userIdentity, secretKeys, recipientIdentity, nil, true)
 		if err != nil {
@@ -222,34 +286,45 @@ func (c *BloomClient) handleNewChatEvent(chatEvent *ChatNewEvent) {
 
 		_ = c.database.SaveUser(recipient)
 	case "group":
-		// recipientIdentity := mappers.ConvertUserToIdentity(chatEvent.InvitedBy)
-
-		// handshakePayload, err := mappers.DecodeHandshake(chatEvent.Handshake)
-		// if err != nil {
-		// 	return
-		// }
-
-		// chatKey, syncKey, err := identity.FinalizeKeyExchange(handshakePayload, userIdentity, secretKeys, recipientIdentity, nil, true)
+		if chat.Members != nil && len(*chat.Members) > 0 {
+			_ = c.database.SaveUsers(*chat.Members)
+		}
 	}
 
 	c.notifyChatsUpdated()
 }
 
 func (c *BloomClient) handleNewMessageEvent(messageEvent *MessageNewEvent) {
+	if messageEvent == nil || messageEvent.RawMessageWithReply == nil {
+		return
+	}
+
+	creds, err := c.getCredentials()
+	if err != nil {
+		return
+	}
+
 	chat, err := c.database.GetChat(messageEvent.ChatID)
 	if err != nil {
 		return
 	}
 
-	recipient := getChatOtherMember(&domain.Chat{
+	recipient, err := getChatRecipient(&domain.Chat{
 		RawChat: chat.RawChat,
-	}, c.credentials.UserID)
-	recipientIdentity := mappers.ConvertUserToIdentity(recipient)
+	}, creds.UserID)
+	if err != nil {
+		return
+	}
 
-	user := getChatOtherMember(&domain.Chat{
-		RawChat: chat.RawChat,
-	}, recipient.ID)
-	userIdentity := mappers.ConvertUserToIdentity(user)
+	recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+	if err != nil {
+		return
+	}
+
+	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
+	if err != nil {
+		return
+	}
 
 	decryptedMessage, err := c.messageManager.DecryptMessage(messageEvent.RawMessageWithReply, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
 	if err != nil {

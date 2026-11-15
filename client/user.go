@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/slipe-fun/bloom-kit/domain"
 )
@@ -21,8 +20,9 @@ type EditRequest struct {
 }
 
 func (c *BloomClient) GetMe() ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	creds, err := c.getCredentials()
+	if err != nil {
+		return nil, err
 	}
 
 	user, err := c.userManager.GetMe(context.Background())
@@ -40,7 +40,7 @@ func (c *BloomClient) GetMe() ([]byte, error) {
 		return nil, err
 	}
 
-	if !bytes.Equal(userBytes, c.credentials.UserJSON) {
+	if !bytes.Equal(userBytes, creds.UserJSON) {
 		c.UpdateCredentialsUserJSON(userBytes)
 	}
 
@@ -53,6 +53,12 @@ func (c *BloomClient) SearchUsers(query string) ([]byte, error) {
 	users, err := c.userManager.Search(context.Background(), query)
 	if err != nil {
 		return nil, err
+	}
+	if users == nil {
+		return []byte("[]"), nil
+	}
+	if len(*users) == 0 {
+		return json.Marshal(*users)
 	}
 
 	err = c.database.SaveUsers(*users)
@@ -69,8 +75,8 @@ func (c *BloomClient) SearchUsers(query string) ([]byte, error) {
 }
 
 func (c *BloomClient) EditUser(req *EditRequest) ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	if _, err := c.getCredentials(); err != nil {
+		return nil, err
 	}
 
 	var username *string
@@ -153,11 +159,12 @@ func (c *BloomClient) getOrFetchUser(userID string) (*domain.User, error) {
 }
 
 func (c *BloomClient) GetOrFetchMe() ([]byte, error) {
-	if c.credentials == nil {
-		return nil, errors.New("unauthorized: client is not logged in")
+	creds, err := c.getCredentials()
+	if err != nil {
+		return nil, err
 	}
 
-	user, err := c.getOrFetchUser(c.credentials.UserID)
+	user, err := c.getOrFetchUser(creds.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +174,7 @@ func (c *BloomClient) GetOrFetchMe() ([]byte, error) {
 		return nil, err
 	}
 
-	if !bytes.Equal(userJSON, c.credentials.UserJSON) {
+	if !bytes.Equal(userJSON, creds.UserJSON) {
 		c.UpdateCredentialsUserJSON(userJSON)
 	}
 
