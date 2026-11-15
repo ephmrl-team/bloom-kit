@@ -12,7 +12,69 @@ import (
 	"github.com/slipe-fun/bloom-kit/mappers"
 )
 
+func copyPublicCredentials(creds *domain.SavedCredentials) *domain.SavedCredentials {
+	if creds == nil {
+		return nil
+	}
+
+	return &domain.SavedCredentials{
+		UserID: creds.UserID,
+		PublicKeys: domain.PublicKeys{
+			MlKem768: creds.PublicKeys.MlKem768,
+			X448:     creds.PublicKeys.X448,
+			Ed448:    creds.PublicKeys.Ed448,
+		},
+		UserJSON: append([]byte(nil), creds.UserJSON...),
+		Token:    creds.Token,
+	}
+}
+
+func writeFileAtomic(filePath string, data []byte) error {
+	dir := filepath.Dir(filePath)
+	tmpFile, err := os.CreateTemp(dir, ".session-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmpFile.Chmod(0600); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		return err
+	}
+
+	cleanup = false
+	return nil
+}
+
 func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	return c.saveCredentialsLocked(creds)
+}
+
+func (c *BloomClient) saveCredentialsLocked(creds *domain.SavedCredentials) error {
 	if creds == nil {
 		return errors.New("credentials are nil")
 	}
@@ -37,8 +99,7 @@ func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
 	}
 
 	filePath := filepath.Join(c.storagePath, "session.dat")
-	err = os.WriteFile(filePath, ciphertext, 0600)
-	if err != nil {
+	if err := writeFileAtomic(filePath, ciphertext); err != nil {
 		return err
 	}
 
@@ -46,8 +107,10 @@ func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
 	crypto.Zero(creds.MasterKey)
 	crypto.Zero(creds.SecretKeys)
 
+	publicCreds := copyPublicCredentials(creds)
+
 	c.credentialsMu.Lock()
-	c.credentials = creds
+	c.credentials = publicCreds
 	c.credentialsMu.Unlock()
 
 	return nil
@@ -66,6 +129,13 @@ func (c *BloomClient) getCredentials() (*domain.SavedCredentials, error) {
 }
 
 func (c *BloomClient) loadCredentials() (*domain.SavedCredentials, error) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	return c.loadCredentialsLocked()
+}
+
+func (c *BloomClient) loadCredentialsLocked() (*domain.SavedCredentials, error) {
 	filePath := filepath.Join(c.storagePath, "session.dat")
 
 	ciphertext, err := os.ReadFile(filePath)
@@ -93,35 +163,27 @@ func (c *BloomClient) loadCredentials() (*domain.SavedCredentials, error) {
 		return nil, err
 	}
 
+	publicCreds := copyPublicCredentials(&creds)
+
 	c.credentialsMu.Lock()
-	c.credentials = &domain.SavedCredentials{
-		UserID: creds.UserID,
-		PublicKeys: domain.PublicKeys{
-			MlKem768: creds.PublicKeys.MlKem768,
-			X448:     creds.PublicKeys.X448,
-			Ed448:    creds.PublicKeys.Ed448,
-		},
-		UserJSON: creds.UserJSON,
-		Token:    creds.Token,
-	}
+	c.credentials = publicCreds
 	c.credentialsMu.Unlock()
 
 	return &creds, nil
 }
 
 func (c *BloomClient) UpdateCredentialsUserJSON(userJSON []byte) error {
-	creds, err := c.loadCredentials()
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	creds, err := c.loadCredentialsLocked()
 	if err != nil {
 		return err
 	}
 
-	creds.UserJSON = userJSON
+	creds.UserJSON = append([]byte(nil), userJSON...)
 
-	if err := c.saveCredentials(creds); err != nil {
-		return err
-	}
-
-	return nil
+	return c.saveCredentialsLocked(creds)
 }
 
 func (c *BloomClient) ClearCredentials() {
@@ -131,6 +193,7 @@ func (c *BloomClient) ClearCredentials() {
 
 	var clearErrs []error
 
+	c.sessionMu.Lock()
 	filePath := filepath.Join(c.storagePath, "session.dat")
 	if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		clearErrs = append(clearErrs, fmt.Errorf("failed to remove session file: %w", err))
@@ -139,6 +202,7 @@ func (c *BloomClient) ClearCredentials() {
 	c.credentialsMu.Lock()
 	c.credentials = nil
 	c.credentialsMu.Unlock()
+	c.sessionMu.Unlock()
 
 	c.apiClient.SetToken("")
 	c.updateUser(nil)

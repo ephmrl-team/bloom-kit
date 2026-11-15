@@ -83,6 +83,8 @@ type BloomClient struct {
 
 	lastChatsHash    [32]byte
 	hasLastChatsHash bool
+
+	sessionMu sync.Mutex
 }
 
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {
