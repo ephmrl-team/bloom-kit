@@ -12,6 +12,13 @@ import (
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 )
 
+const (
+	wsDialTimeout = 10 * time.Second
+	wsWriteWait   = 10 * time.Second
+	wsPongWait    = 45 * time.Second
+	wsPingPeriod  = 20 * time.Second
+)
+
 type WsEvent struct {
 	Type string `json:"type"`
 	Data []byte `json:"data"`
@@ -79,6 +86,11 @@ func (c *BloomClient) startWebSocket(ctx context.Context, wsURL string) {
 	c.wsDone = done
 	c.wsCancelMu.Unlock()
 
+	c.wsMu.Lock()
+	c.wsConnected = false
+	c.wsHasConnected = false
+	c.wsMu.Unlock()
+
 	go func() {
 		defer close(done)
 		defer c.recoverBackground("websocket")
@@ -130,15 +142,29 @@ func (c *BloomClient) stopWebSocket() {
 
 	c.wsMu.Lock()
 	c.wsConnected = false
+	c.wsHasConnected = false
 	c.wsMu.Unlock()
 }
 
 func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, url, nil)
+	dialCtx, dialCancel := context.WithTimeout(ctx, wsDialTimeout)
+	conn, _, err := websocket.DefaultDialer.DialContext(dialCtx, url, nil)
+	dialCancel()
 	if err != nil {
 		return fmt.Errorf("websocket dial error: %w", err)
 	}
 	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
+
+	defaultPingHandler := conn.PingHandler()
+	conn.SetPingHandler(func(appData string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return defaultPingHandler(appData)
+	})
 
 	done := make(chan struct{})
 	defer close(done)
@@ -153,9 +179,36 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 		}
 	}()
 
-	if c.isReconnect() {
+	go func() {
+		defer c.recoverBackground("websocket-ping")
+
+		ticker := time.NewTicker(wsPingPeriod)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteWait)); err != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
+
+	reconnected := c.markConnected()
+	c.notifyConnectionState(true)
+	if reconnected {
 		c.notifyReconnect()
 	}
+	defer func() {
+		c.markDisconnected()
+		c.notifyConnectionState(false)
+	}()
 
 	for {
 		select {
@@ -166,6 +219,8 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 			if err != nil {
 				return fmt.Errorf("websocket read error: %w", err)
 			}
+
+			_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
 
 			var event WsEvent
 			if err := json.Unmarshal(message, &event); err != nil {
@@ -193,16 +248,56 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 	}
 }
 
-func (c *BloomClient) isReconnect() bool {
+func (c *BloomClient) markConnected() bool {
 	c.wsMu.Lock()
 	defer c.wsMu.Unlock()
 
-	if c.wsConnected {
-		return true
+	reconnected := c.wsHasConnected
+	c.wsConnected = true
+	c.wsHasConnected = true
+	return reconnected
+}
+
+func (c *BloomClient) markDisconnected() {
+	c.wsMu.Lock()
+	c.wsConnected = false
+	c.wsMu.Unlock()
+}
+
+func (c *BloomClient) IsWebSocketConnected() bool {
+	c.wsMu.Lock()
+	defer c.wsMu.Unlock()
+
+	return c.wsConnected
+}
+
+func (c *BloomClient) notifyConnectionState(connected bool) {
+	c.listenerMu.RLock()
+	connectionListener := c.connectionListener
+	c.listenerMu.RUnlock()
+
+	if connectionListener == nil {
+		return
 	}
 
-	c.wsConnected = true
-	return false
+	if connected {
+		connectionListener.OnConnected()
+		return
+	}
+
+	connectionListener.OnDisconnected()
+}
+
+func (c *BloomClient) RegisterConnectionListener(listener ConnectionListener) {
+	c.listenerMu.Lock()
+	c.connectionListener = listener
+	c.listenerMu.Unlock()
+}
+
+func (c *BloomClient) UnregisterConnectionListener() {
+	c.listenerMu.Lock()
+	c.connectionListener = nil
+	c.listenerMu.Unlock()
 }
 
 func (c *BloomClient) notifyReconnect() {

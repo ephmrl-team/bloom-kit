@@ -39,6 +39,11 @@ type ReconnectListener interface {
 	OnReconnect()
 }
 
+type ConnectionListener interface {
+	OnConnected()
+	OnDisconnected()
+}
+
 type BloomClient struct {
 	wsURL           string
 	apiClient       *api.Client
@@ -68,11 +73,13 @@ type BloomClient struct {
 	syncDone                chan struct{}
 	syncMu                  sync.Mutex
 
-	wsConnected bool
-	wsMu        sync.Mutex
-	wsCancel    context.CancelFunc
-	wsDone      chan struct{}
-	wsCancelMu  sync.Mutex
+	wsConnected        bool
+	wsMu               sync.Mutex
+	wsCancel           context.CancelFunc
+	wsDone             chan struct{}
+	wsCancelMu         sync.Mutex
+	wsHasConnected     bool
+	connectionListener ConnectionListener
 }
 
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {
