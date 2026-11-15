@@ -55,7 +55,7 @@ func (c *BloomClient) Register() (*RegisterResult, error) {
 
 	rawRecoveryKeyHex := hex.EncodeToString(rawRecoveryKey)
 
-	err = c.saveCredentials(&domain.SavedCredentials{
+	c.saveCredentials(&domain.SavedCredentials{
 		UserID:         registerResponse.User.ID,
 		RawRecoveryKey: rawRecoveryKey,
 		MasterKey:      masterKey,
@@ -68,9 +68,6 @@ func (c *BloomClient) Register() (*RegisterResult, error) {
 		UserJSON:   userBytes,
 		Token:      registerResponse.Token,
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	c.database.SaveUser(&registerResponse.User)
 
@@ -134,7 +131,7 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 		return nil, err
 	}
 
-	err = c.saveCredentials(&domain.SavedCredentials{
+	c.saveCredentials(&domain.SavedCredentials{
 		UserID:         finishLoginResult.User.ID,
 		RawRecoveryKey: rawRecoveryKeyBytes,
 		MasterKey:      masterKey,
@@ -147,9 +144,6 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 		UserJSON:   userBytes,
 		Token:      finishLoginResult.Token,
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	c.database.SaveUser(&finishLoginResult.User)
 
