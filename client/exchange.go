@@ -60,18 +60,10 @@ func (c *BloomClient) sendExchangeEvent(eventType string, conn *websocket.Conn) 
 	return nil
 }
 
-func (c *BloomClient) generateExchangeSession(exchangeType string) error {
+func (c *BloomClient) generateExchangeSession(_ string) error {
 	userIdentity, secretKeys, _, _, _, _, err := identity.GenerateIdentity()
 	if err != nil {
 		return err
-	}
-
-	if exchangeType == "push" {
-		creds, err := c.getCredentials()
-		if err != nil {
-			return err
-		}
-		userIdentity.ID = creds.UserID
 	}
 
 	c.exchangeMu.Lock()
@@ -256,14 +248,9 @@ func (c *BloomClient) Exchange(exchangeType, roomID, fingerprint string) (recove
 					}
 				}
 
-				receiverPublicKeys, err := mappers.UnmapPublicKeys(&event.PublicKeys)
+				recipientIdentity, err = mappers.ConvertPublicKeysToUser(event.UserID, &event.PublicKeys)
 				if err != nil {
 					return "", err
-				}
-
-				recipientIdentity = &identity.User{
-					ID:         event.UserID,
-					PublicKeys: *receiverPublicKeys,
 				}
 
 				if exchangeType == "push" && pendingHandshakeRequest {

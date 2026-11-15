@@ -207,15 +207,12 @@ func GetUser(userID *C.char) *C.char {
 }
 
 //export CreateChat
-func CreateChat(userID, mlKem768Key, x448Key, ed448Key *C.char) *C.char {
+func CreateChat(userID *C.char) *C.char {
 	if globalClient == nil {
 		return C.CString(`{"error": "client not initialized"}`)
 	}
 	req := &client.CreateChatRequest{
-		UserID:            C.GoString(userID),
-		MlKem768PublicKey: C.GoString(mlKem768Key),
-		X448PublicKey:     C.GoString(x448Key),
-		Ed448PublicKey:    C.GoString(ed448Key),
+		UserID: C.GoString(userID),
 	}
 	res, err := globalClient.CreateChat(req)
 	if err != nil {

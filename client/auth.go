@@ -2,9 +2,9 @@ package client
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 
 	"github.com/slipe-fun/bloom-kit/crypto"
 	"github.com/slipe-fun/bloom-kit/domain"
@@ -31,6 +31,16 @@ func (c *BloomClient) Register() (*RegisterResult, error) {
 	registerResponse, err := c.authManager.Register(context.Background(), userIdentity, secret, masterKey, recoveryKey, lookupID)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := mappers.VerifyIdentity(userIdentity.ID, &userIdentity.PublicKeys); err != nil {
+		return nil, err
+	}
+	if registerResponse.User.ID != userIdentity.ID {
+		return nil, fmt.Errorf("%w: register response user ID mismatch", domain.ErrIdentityMismatch)
+	}
+	if _, err := mappers.ConvertUserToIdentity(&registerResponse.User); err != nil {
+		return nil, fmt.Errorf("failed to verify registered user: %w", err)
 	}
 
 	mappedSecretKeys, err := mappers.MapSecretKeys(secret)
@@ -92,28 +102,13 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 		return nil, err
 	}
 
-	decodedMlKem768, err := base64.StdEncoding.DecodeString(beginLoginResponse.Keys.IdentityKeys.IdentityPublicKeys.MlKemPublicKey)
+	userIdentity, err := mappers.ConvertPublicKeysToUser(beginLoginResponse.UserID, &domain.PublicKeys{
+		MlKem768: beginLoginResponse.Keys.IdentityKeys.IdentityPublicKeys.MlKemPublicKey,
+		X448:     beginLoginResponse.Keys.IdentityKeys.IdentityPublicKeys.EcdhPublicKey,
+		Ed448:    beginLoginResponse.Keys.IdentityKeys.IdentityPublicKeys.EdPublicKey,
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	decodedX448, err := base64.StdEncoding.DecodeString(beginLoginResponse.Keys.IdentityKeys.IdentityPublicKeys.EcdhPublicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	decodedEd448, err := base64.StdEncoding.DecodeString(beginLoginResponse.Keys.IdentityKeys.IdentityPublicKeys.EdPublicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	userIdentity := &identity.User{
-		ID: beginLoginResponse.UserID,
-		PublicKeys: identity.PublicKeys{
-			MlKem768: decodedMlKem768,
-			X448:     decodedX448,
-			Ed448:    decodedEd448,
-		},
 	}
 
 	finishLoginResult, masterKey, secretKeys, err := c.authManager.FinishLogin(context.Background(), beginLoginResponse, userIdentity, recoveryKeyBytes)
@@ -121,6 +116,13 @@ func (c *BloomClient) Login(rawRecoveryKey string) (*LoginResult, error) {
 		return nil, err
 	}
 	defer secretKeys.Wipe()
+
+	if finishLoginResult.User.ID != userIdentity.ID {
+		return nil, fmt.Errorf("%w: login response user ID mismatch", domain.ErrIdentityMismatch)
+	}
+	if _, err := mappers.ConvertUserToIdentity(&finishLoginResult.User); err != nil {
+		return nil, fmt.Errorf("failed to verify logged in user: %w", err)
+	}
 
 	userBytes, err := json.Marshal(finishLoginResult.User)
 	if err != nil {

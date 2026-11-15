@@ -3,21 +3,16 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/slipe-fun/bloom-kit/domain"
 	"github.com/slipe-fun/bloom-kit/mappers"
-	"github.com/slipe-fun/skid-v4/pkg/identity"
 )
 
 type CreateChatRequest struct {
-	UserID            string
-	MlKem768PublicKey string
-	X448PublicKey     string
-	Ed448PublicKey    string
+	UserID string
 }
 
 type ChatResponse struct {
@@ -200,28 +195,23 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 	}
 	defer secretKeys.Wipe()
 
-	receiverPublicKeys, err := mappers.UnmapPublicKeys(&domain.PublicKeys{
-		MlKem768: receiverUser.MlKem768PublicKey,
-		X448:     receiverUser.X448PublicKey,
-		Ed448:    receiverUser.Ed448PublicKey,
-	})
+	receiver, err := c.getOrFetchUser(receiverUser.UserID)
 	if err != nil {
 		return nil, err
 	}
-	if len(receiverPublicKeys.MlKem768) == 0 || len(receiverPublicKeys.X448) == 0 || len(receiverPublicKeys.Ed448) == 0 {
-		return nil, fmt.Errorf("%w: receiver has empty public keys", domain.ErrInvalidUserIdentity)
+	if receiver == nil {
+		return nil, fmt.Errorf("%w: receiver not found", domain.ErrInvalidUserIdentity)
+	}
+	if receiver.ID != receiverUser.UserID {
+		return nil, fmt.Errorf("%w: receiver ID mismatch", domain.ErrIdentityMismatch)
 	}
 
-	receiver := identity.User{
-		ID: receiverUser.UserID,
-		PublicKeys: identity.PublicKeys{
-			MlKem768: receiverPublicKeys.MlKem768,
-			X448:     receiverPublicKeys.X448,
-			Ed448:    receiverPublicKeys.Ed448,
-		},
+	receiverIdentity, err := mappers.ConvertUserToIdentity(receiver)
+	if err != nil {
+		return nil, err
 	}
 
-	createdChat, chatKey, syncKey, err := c.chatManager.Create(context.Background(), sender, &receiver, secretKeys)
+	createdChat, chatKey, syncKey, err := c.chatManager.Create(context.Background(), sender, receiverIdentity, secretKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -234,17 +224,12 @@ func (c *BloomClient) createChat(receiverUser *CreateChatRequest) (*ChatResponse
 		return nil, err
 	}
 
-	recipient, err := getChatRecipient(createdChat, creds.UserID)
-	if err != nil {
-		if !errors.Is(err, domain.ErrChatRecipientNotFound) {
-			return nil, err
-		}
-
-		recipient = &domain.User{
-			ID:             receiverUser.UserID,
-			MlKemPublicKey: receiverUser.MlKem768PublicKey,
-			EcdhPublicKey:  receiverUser.X448PublicKey,
-			EdPublicKey:    receiverUser.Ed448PublicKey,
+	recipient := receiver
+	if createdChat.Members != nil {
+		for i := range *createdChat.Members {
+			if _, err := mappers.ConvertUserToIdentity(&(*createdChat.Members)[i]); err != nil {
+				return nil, fmt.Errorf("failed to verify chat member %s: %w", (*createdChat.Members)[i].ID, err)
+			}
 		}
 	}
 
@@ -498,6 +483,10 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 			RawChat: chat.RawChat,
 		}, creds.UserID)
 		if err != nil {
+			continue
+		}
+
+		if _, err := mappers.ConvertUserToIdentity(recipient); err != nil {
 			continue
 		}
 

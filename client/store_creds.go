@@ -9,11 +9,16 @@ import (
 
 	"github.com/slipe-fun/bloom-kit/crypto"
 	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/slipe-fun/bloom-kit/mappers"
 )
 
 func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
 	if creds == nil {
 		return errors.New("credentials are nil")
+	}
+
+	if _, err := mappers.ConvertCredentialsToUser(creds); err != nil {
+		return err
 	}
 
 	plainText, err := json.Marshal(creds)
@@ -81,6 +86,10 @@ func (c *BloomClient) loadCredentials() (*domain.SavedCredentials, error) {
 	var creds domain.SavedCredentials
 	err = json.Unmarshal(plainText, &creds)
 	if err != nil {
+		return nil, err
+	}
+
+	if _, err := mappers.ConvertCredentialsToUser(&creds); err != nil {
 		return nil, err
 	}
 

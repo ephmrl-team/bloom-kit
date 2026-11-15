@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/slipe-fun/bloom-kit/mappers"
 )
 
 type EditRequest struct {
@@ -28,6 +30,13 @@ func (c *BloomClient) GetMe() ([]byte, error) {
 	user, err := c.userManager.GetMe(context.Background())
 	if err != nil {
 		return nil, err
+	}
+	if user == nil || user.ID != creds.UserID {
+		return nil, fmt.Errorf("%w: current user ID mismatch", domain.ErrIdentityMismatch)
+	}
+
+	if _, err := mappers.ConvertUserToIdentity(user); err != nil {
+		return nil, fmt.Errorf("failed to verify current user: %w", err)
 	}
 
 	err = c.database.SaveUser(user)
@@ -61,6 +70,12 @@ func (c *BloomClient) SearchUsers(query string) ([]byte, error) {
 		return json.Marshal(*users)
 	}
 
+	for i := range *users {
+		if _, err := mappers.ConvertUserToIdentity(&(*users)[i]); err != nil {
+			return nil, fmt.Errorf("failed to verify user %s from search results: %w", (*users)[i].ID, err)
+		}
+	}
+
 	err = c.database.SaveUsers(*users)
 	if err != nil {
 		return nil, err
@@ -75,7 +90,8 @@ func (c *BloomClient) SearchUsers(query string) ([]byte, error) {
 }
 
 func (c *BloomClient) EditUser(req *EditRequest) ([]byte, error) {
-	if _, err := c.getCredentials(); err != nil {
+	creds, err := c.getCredentials()
+	if err != nil {
 		return nil, err
 	}
 
@@ -103,6 +119,12 @@ func (c *BloomClient) EditUser(req *EditRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if editedUser == nil || editedUser.User.ID != creds.UserID {
+		return nil, fmt.Errorf("%w: edited user ID mismatch", domain.ErrIdentityMismatch)
+	}
+	if _, err := mappers.ConvertUserToIdentity(&editedUser.User); err != nil {
+		return nil, fmt.Errorf("failed to verify edited user: %w", err)
+	}
 
 	err = c.database.SaveUser(&editedUser.User)
 	if err != nil {
@@ -123,6 +145,16 @@ func (c *BloomClient) GetUser(userID string) ([]byte, error) {
 	user, err := c.userManager.Get(context.Background(), userID)
 	if err != nil {
 		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("%w: user %s not found", domain.ErrNilUser, userID)
+	}
+
+	if user.ID != userID {
+		return nil, fmt.Errorf("%w: requested %s, got %s", domain.ErrIdentityMismatch, userID, user.ID)
+	}
+	if _, err := mappers.ConvertUserToIdentity(user); err != nil {
+		return nil, fmt.Errorf("failed to verify user %s: %w", userID, err)
 	}
 
 	err = c.database.SaveUser(user)
@@ -149,10 +181,20 @@ func (c *BloomClient) getOrFetchUser(userID string) (*domain.User, error) {
 		if err != nil {
 			return nil, err
 		}
+		if user == nil {
+			return nil, fmt.Errorf("%w: user %s not found", domain.ErrNilUser, userID)
+		}
 		err = c.database.SaveUser(user)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if user.ID != userID {
+		return nil, fmt.Errorf("%w: requested %s, got %s", domain.ErrIdentityMismatch, userID, user.ID)
+	}
+	if _, err := mappers.ConvertUserToIdentity(user); err != nil {
+		return nil, fmt.Errorf("failed to verify user %s: %w", userID, err)
 	}
 
 	return user, nil
