@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/slipe-fun/bloom-kit/api/message"
@@ -34,10 +35,21 @@ func (m *MessageManager) Send(
 
 	var replyToMessage *domain.MessageWithDecryptedData
 	if sentMessage.ReplyToMessage != nil {
+		decryptedReply, err := m.DecryptMessage(&domain.RawMessageWithReply{
+			RawMessage: *sentMessage.ReplyToMessage,
+		}, chatKey, syncKey, userIdentity, receiverIdentity)
+		if err != nil {
+			return nil, err
+		}
+		if decryptedReply == nil {
+			return nil, errors.New("decrypted reply is nil")
+		}
+
 		replyToMessage = &domain.MessageWithDecryptedData{
 			RawMessageWithReply: domain.RawMessageWithReply{
 				RawMessage: *sentMessage.ReplyToMessage,
 			},
+			Message: *decryptedReply,
 		}
 	}
 
