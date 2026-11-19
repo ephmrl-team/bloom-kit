@@ -74,7 +74,7 @@ func VerifyIdentity(userID string, publicKeys *identity.PublicKeys) error {
 		return fmt.Errorf("%w: user %s has empty public keys", domain.ErrIncompleteUser, userID)
 	}
 
-	derivedID := identity.GenerateUserID(publicKeys.X448, publicKeys.MlKem768)
+	derivedID := identity.GenerateUserID(publicKeys.Ed448, publicKeys.X448, publicKeys.MlKem768)
 	if derivedID != userID {
 		return fmt.Errorf("%w: got %s, expected %s", domain.ErrIdentityMismatch, userID, derivedID)
 	}
@@ -129,6 +129,7 @@ func ConvertCredentialsToUser(creds *domain.SavedCredentials) (*identity.User, e
 
 func MapEncryptedGroupKey(encryptedGroupKey *messages.EncryptedMessage) *domain.EncryptedGroupKey {
 	return &domain.EncryptedGroupKey{
+		Version:    base64.StdEncoding.EncodeToString(encryptedGroupKey.Version),
 		Ciphertext: base64.StdEncoding.EncodeToString(encryptedGroupKey.Ciphertext),
 		Nonce:      base64.StdEncoding.EncodeToString(encryptedGroupKey.Nonce),
 		Salt:       base64.StdEncoding.EncodeToString(encryptedGroupKey.Salt),

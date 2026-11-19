@@ -37,6 +37,7 @@ type exchangeHandshake struct {
 type exchangeMessage struct {
 	Type       string `json:"type"`
 	UserID     string `json:"user_id"`
+	Version    string `json:"version"`
 	Ciphertext string `json:"ciphertext"`
 	Nonce      string `json:"nonce"`
 	Salt       string `json:"salt"`
@@ -328,6 +329,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 					exchangeEncryptedRecoveryKeyMessage := exchangeMessage{
 						Type:       "exchange.recovery_key",
+						Version:    base64.StdEncoding.EncodeToString(message.Version),
 						Ciphertext: base64.StdEncoding.EncodeToString(message.Ciphertext),
 						Nonce:      base64.StdEncoding.EncodeToString(message.Nonce),
 						Salt:       base64.StdEncoding.EncodeToString(message.Salt),
@@ -367,6 +369,11 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 					continue
 				}
 
+				version, err := base64.StdEncoding.DecodeString(event.Version)
+				if err != nil {
+					return "", err
+				}
+
 				ciphertext, err := base64.StdEncoding.DecodeString(event.Ciphertext)
 				if err != nil {
 					return "", err
@@ -383,6 +390,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 				}
 
 				decryptedMessage, err := messages.Decrypt(chatKey, messages.EncryptedMessage{
+					Version:    version,
 					Ciphertext: ciphertext,
 					Nonce:      nonce,
 					Salt:       salt,
@@ -501,6 +509,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 				exchangeEncryptedRecoveryKeyMessage := exchangeMessage{
 					Type:       "exchange.recovery_key",
+					Version:    base64.StdEncoding.EncodeToString(message.Version),
 					Ciphertext: base64.StdEncoding.EncodeToString(message.Ciphertext),
 					Nonce:      base64.StdEncoding.EncodeToString(message.Nonce),
 					Salt:       base64.StdEncoding.EncodeToString(message.Salt),

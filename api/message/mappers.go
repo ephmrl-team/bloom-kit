@@ -9,6 +9,7 @@ import (
 
 func NewSendMessageRequest(chatID int, replyToID *int, encryptedMessage messages.EncryptedMessage) *domain.SendMessageRequest {
 	return &domain.SendMessageRequest{
+		Version:    base64.StdEncoding.EncodeToString(encryptedMessage.Version),
 		Ciphertext: base64.StdEncoding.EncodeToString(encryptedMessage.Ciphertext),
 		Nonce:      base64.StdEncoding.EncodeToString(encryptedMessage.Nonce),
 		Salt:       base64.StdEncoding.EncodeToString(encryptedMessage.Salt),

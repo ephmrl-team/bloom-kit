@@ -9,6 +9,7 @@ import (
 
 type RawMessage struct {
 	ID         int        `json:"id"`
+	Version    string     `json:"version"`
 	Ciphertext string     `json:"ciphertext"`
 	Nonce      string     `json:"nonce"`
 	Salt       string     `json:"salt"`
@@ -20,6 +21,7 @@ type RawMessage struct {
 func (r *RawMessage) UnmarshalJSON(data []byte) error {
 	type rawMessageHelper struct {
 		ID         int             `json:"id"`
+		Version    string          `json:"version"`
 		Ciphertext string          `json:"ciphertext"`
 		Nonce      string          `json:"nonce"`
 		Salt       string          `json:"salt"`
@@ -34,6 +36,7 @@ func (r *RawMessage) UnmarshalJSON(data []byte) error {
 	}
 
 	r.ID = raw.ID
+	r.Version = raw.Version
 	r.Ciphertext = raw.Ciphertext
 	r.Nonce = raw.Nonce
 	r.Salt = raw.Salt
@@ -65,6 +68,7 @@ type RawMessageWithReply struct {
 func (r *RawMessageWithReply) UnmarshalJSON(data []byte) error {
 	type rawMessageHelper struct {
 		ID         int             `json:"id"`
+		Version    string          `json:"version"`
 		Ciphertext string          `json:"ciphertext"`
 		Nonce      string          `json:"nonce"`
 		Salt       string          `json:"salt"`
@@ -79,6 +83,7 @@ func (r *RawMessageWithReply) UnmarshalJSON(data []byte) error {
 	}
 
 	r.ID = raw.ID
+	r.Version = raw.Version
 	r.Ciphertext = raw.Ciphertext
 	r.Nonce = raw.Nonce
 	r.Salt = raw.Salt
@@ -113,6 +118,7 @@ type Message struct {
 }
 
 type SendMessageRequest struct {
+	Version    string `json:"version"`
 	Ciphertext string `json:"ciphertext"`
 	Nonce      string `json:"nonce"`
 	Salt       string `json:"salt"`

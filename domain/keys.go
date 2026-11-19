@@ -1,6 +1,7 @@
 package domain
 
 type EncryptedKey struct {
+	Version    string `json:"version"`
 	Ciphertext string `db:"ciphertext" json:"ciphertext"`
 	Nonce      string `db:"nonce" json:"nonce"`
 	Salt       string `db:"salt" json:"salt"`
@@ -8,9 +9,9 @@ type EncryptedKey struct {
 }
 
 type IdentityPublicKeys struct {
-	MlKemPublicKey string `json:"ml_kem_public_key"`
-	EcdhPublicKey  string `json:"ecdh_public_key"`
-	EdPublicKey    string `json:"ed_public_key"`
+	MlKemPublicKey string `json:"ml_kem768_public_key"`
+	EcdhPublicKey  string `json:"x448_public_key"`
+	EdPublicKey    string `json:"ed448_public_key"`
 }
 
 type EncryptedKeys struct {

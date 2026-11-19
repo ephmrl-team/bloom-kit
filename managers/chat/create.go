@@ -10,6 +10,7 @@ import (
 	"github.com/slipe-fun/bloom-kit/mappers"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 	"github.com/slipe-fun/skid-v4/pkg/messages"
+	"github.com/slipe-fun/skid-v4/pkg/protocol"
 	"github.com/tink-crypto/tink-go/v2/subtle/random"
 )
 
@@ -84,7 +85,7 @@ func (c *ChatManager) CreateGroup(
 		return nil, nil, err
 	}
 
-	groupEncryptionKey, err := crypto.HKDF(groupKey, []byte(strconv.Itoa(createGroupRequest.ID)), "skid:v4:group_encryption_key", 32)
+	groupEncryptionKey, err := crypto.HKDF(groupKey, []byte(strconv.Itoa(createGroupRequest.ID)), protocol.Current.Label("group_encryption_key"), 32)
 	if err != nil {
 		return nil, nil, err
 	}

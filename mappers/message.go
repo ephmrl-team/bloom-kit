@@ -8,7 +8,12 @@ import (
 	"github.com/slipe-fun/skid-v4/pkg/messages"
 )
 
-func ConvertRawMessageToEncryptedMessage(ciphertext, nonce, salt string) (*messages.EncryptedMessage, error) {
+func ConvertRawMessageToEncryptedMessage(ciphertext, nonce, salt, version string) (*messages.EncryptedMessage, error) {
+	versionBytes, err := base64.StdEncoding.DecodeString(version)
+	if err != nil {
+		return nil, err
+	}
+
 	ciphertextBytes, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
 		return nil, err
@@ -25,6 +30,7 @@ func ConvertRawMessageToEncryptedMessage(ciphertext, nonce, salt string) (*messa
 	}
 
 	return &messages.EncryptedMessage{
+		Version:    versionBytes,
 		Ciphertext: ciphertextBytes,
 		Nonce:      nonceBytes,
 		Salt:       saltBytes,
@@ -34,11 +40,11 @@ func ConvertRawMessageToEncryptedMessage(ciphertext, nonce, salt string) (*messa
 func MapDomainMessageToDecrypted(msg *domain.Message) domain.DecryptedMessageWithReply {
 	createdAt := msg.CreatedAt
 	if createdAt.IsZero() && msg.Timestamp != 0 {
-		createdAt = time.Unix(msg.Timestamp, 0).UTC()
+		createdAt = time.UnixMilli(msg.Timestamp).UTC()
 	}
 	timestamp := msg.Timestamp
 	if timestamp == 0 && !createdAt.IsZero() {
-		timestamp = createdAt.Unix()
+		timestamp = createdAt.UnixMilli()
 	}
 
 	decrypted := domain.DecryptedMessageWithReply{
@@ -55,11 +61,11 @@ func MapDomainMessageToDecrypted(msg *domain.Message) domain.DecryptedMessageWit
 	if msg.ReplyToMessage != nil {
 		replyCreatedAt := msg.ReplyToMessage.CreatedAt
 		if replyCreatedAt.IsZero() && msg.ReplyToMessage.Timestamp != 0 {
-			replyCreatedAt = time.Unix(msg.ReplyToMessage.Timestamp, 0).UTC()
+			replyCreatedAt = time.UnixMilli(msg.ReplyToMessage.Timestamp).UTC()
 		}
 		replyTimestamp := msg.ReplyToMessage.Timestamp
 		if replyTimestamp == 0 && !replyCreatedAt.IsZero() {
-			replyTimestamp = replyCreatedAt.Unix()
+			replyTimestamp = replyCreatedAt.UnixMilli()
 		}
 
 		decrypted.ReplyTo = &domain.DecryptedMessage{

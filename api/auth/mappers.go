@@ -19,6 +19,7 @@ func NewKeysRequest(
 		AuthLookupID: authLookupID,
 		IdentityKeys: domain.IdentityKeysRequest{
 			EncryptedSecretKeys: domain.EncryptedKey{
+				Version:    base64.StdEncoding.EncodeToString(encryptedSecretKeys.Version),
 				Ciphertext: base64.StdEncoding.EncodeToString(encryptedSecretKeys.Ciphertext),
 				Nonce:      base64.StdEncoding.EncodeToString(encryptedSecretKeys.Nonce),
 				Salt:       base64.StdEncoding.EncodeToString(encryptedSecretKeys.Salt),
@@ -31,6 +32,7 @@ func NewKeysRequest(
 			},
 		},
 		EncryptedMasterKey: domain.EncryptedKey{
+			Version:    base64.StdEncoding.EncodeToString(encryptedMasterKey.Version),
 			Ciphertext: base64.StdEncoding.EncodeToString(encryptedMasterKey.Ciphertext),
 			Nonce:      base64.StdEncoding.EncodeToString(encryptedMasterKey.Nonce),
 			Salt:       base64.StdEncoding.EncodeToString(encryptedMasterKey.Salt),
@@ -40,6 +42,11 @@ func NewKeysRequest(
 }
 
 func DecodeBeginLoginResponse(response *domain.BeginLoginResponse, user *identity.User) (*identity.EncryptedMasterKey, *identity.EncryptedSecretKeys, *domain.LoginChallenge, error) {
+	masterKeyVersion, err := base64.StdEncoding.DecodeString(response.Keys.EncryptedMasterKey.Version)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	masterKeyCiphertext, err := base64.StdEncoding.DecodeString(response.Keys.EncryptedMasterKey.Ciphertext)
 	if err != nil {
 		return nil, nil, nil, err
@@ -56,6 +63,11 @@ func DecodeBeginLoginResponse(response *domain.BeginLoginResponse, user *identit
 	}
 
 	masterKeySignature, err := base64.StdEncoding.DecodeString(response.Keys.EncryptedMasterKey.Signature)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	secretKeysVersion, err := base64.StdEncoding.DecodeString(response.Keys.IdentityKeys.EncryptedSecretKeys.Version)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -81,6 +93,7 @@ func DecodeBeginLoginResponse(response *domain.BeginLoginResponse, user *identit
 	}
 
 	encryptedMasterKeyBytes := identity.EncryptedMasterKey{
+		Version:    masterKeyVersion,
 		Ciphertext: masterKeyCiphertext,
 		Nonce:      masterKeyNonce,
 		Salt:       masterKeySalt,
@@ -88,6 +101,7 @@ func DecodeBeginLoginResponse(response *domain.BeginLoginResponse, user *identit
 	}
 
 	encryptedSecretKeysBytes := identity.EncryptedSecretKeys{
+		Version:    secretKeysVersion,
 		Ciphertext: secretKeysCiphertext,
 		Nonce:      secretKeysNonce,
 		Salt:       secretKeysSalt,

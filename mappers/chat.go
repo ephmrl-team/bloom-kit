@@ -10,8 +10,10 @@ import (
 
 func MapHandshake(handshake *identity.HandshakePayload) *domain.Handshake {
 	return &domain.Handshake{
+		Version:             base64.StdEncoding.EncodeToString(handshake.Version),
 		ReceiverCipherText:  base64.StdEncoding.EncodeToString(handshake.ReceiverCiphertext),
 		SenderEphemeralX448: base64.StdEncoding.EncodeToString(handshake.SenderEphemeralX448),
+		SenderSignature:     base64.StdEncoding.EncodeToString(handshake.SenderSignature),
 		EncryptedSyncKey: domain.EncryptedSyncKey{
 			CipherText: base64.StdEncoding.EncodeToString(handshake.EncryptedSyncKey.Ciphertext),
 			Nonce:      base64.StdEncoding.EncodeToString(handshake.EncryptedSyncKey.Nonce),
@@ -24,11 +26,18 @@ func DecodeHandshake(handshake *domain.Handshake) (*identity.HandshakePayload, e
 		return nil, domain.ErrHandshakeMissing
 	}
 
-	if handshake.ReceiverCipherText == "" ||
+	if handshake.Version == "" ||
+		handshake.ReceiverCipherText == "" ||
 		handshake.SenderEphemeralX448 == "" ||
+		handshake.SenderSignature == "" ||
 		handshake.EncryptedSyncKey.CipherText == "" ||
 		handshake.EncryptedSyncKey.Nonce == "" {
 		return nil, fmt.Errorf("%w: one or more fields are empty", domain.ErrHandshakeIncomplete)
+	}
+
+	versionBytes, err := base64.StdEncoding.DecodeString(handshake.Version)
+	if err != nil {
+		return nil, err
 	}
 
 	receiverCiphertextBytes, err := base64.StdEncoding.DecodeString(handshake.ReceiverCipherText)
@@ -37,6 +46,11 @@ func DecodeHandshake(handshake *domain.Handshake) (*identity.HandshakePayload, e
 	}
 
 	senderEphemeralX448Bytes, err := base64.StdEncoding.DecodeString(handshake.SenderEphemeralX448)
+	if err != nil {
+		return nil, err
+	}
+
+	senderSignatureBytes, err := base64.StdEncoding.DecodeString(handshake.SenderSignature)
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +66,10 @@ func DecodeHandshake(handshake *domain.Handshake) (*identity.HandshakePayload, e
 	}
 
 	return &identity.HandshakePayload{
+		Version:             versionBytes,
 		ReceiverCiphertext:  receiverCiphertextBytes,
 		SenderEphemeralX448: senderEphemeralX448Bytes,
+		SenderSignature:     senderSignatureBytes,
 		EncryptedSyncKey: identity.EncryptedSyncKey{
 			Ciphertext: encryptedSyncKeyCiphertextBytes,
 			Nonce:      encryptedSyncKeyNonceBytes,

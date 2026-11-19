@@ -16,7 +16,7 @@ func messageCreatedAt(message *domain.Message) time.Time {
 	}
 
 	if message.Timestamp != 0 {
-		return time.Unix(message.Timestamp, 0).UTC()
+		return time.UnixMilli(message.Timestamp).UTC()
 	}
 
 	return time.Now().UTC()
@@ -28,9 +28,8 @@ func saveMessageTx(tx *sql.Tx, message *domain.Message) error {
 
 		replyCreatedAt := message.ReplyToMessage.CreatedAt
 		if replyCreatedAt.IsZero() && message.ReplyToMessage.Timestamp != 0 {
-			replyCreatedAt = time.Unix(
+			replyCreatedAt = time.UnixMilli(
 				message.ReplyToMessage.Timestamp,
-				0,
 			).UTC()
 		}
 

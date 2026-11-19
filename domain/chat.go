@@ -8,12 +8,15 @@ type EncryptedSyncKey struct {
 }
 
 type Handshake struct {
-	ReceiverCipherText  string           `json:"receiver_cipher_text"`
+	Version             string           `json:"version"`
+	ReceiverCipherText  string           `json:"receiver_ciphertext"`
 	SenderEphemeralX448 string           `json:"sender_ephemeral_x448"`
+	SenderSignature     string           `json:"sender_signature"`
 	EncryptedSyncKey    EncryptedSyncKey `json:"encrypted_sync_key"`
 }
 
 type EncryptedGroupKey struct {
+	Version    string `json:"version"`
 	Ciphertext string `json:"ciphertext"`
 	Nonce      string `json:"nonce"`
 	Salt       string `json:"salt"`

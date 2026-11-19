@@ -14,7 +14,7 @@ func (m *MessageManager) DecryptMessage(
 	userIdentity *identity.User,
 	recipientIdentity *identity.User,
 ) (*message.Message, error) {
-	convertedMessage, err := mappers.ConvertRawMessageToEncryptedMessage(msg.Ciphertext, msg.Nonce, msg.Salt)
+	convertedMessage, err := mappers.ConvertRawMessageToEncryptedMessage(msg.Ciphertext, msg.Nonce, msg.Salt, msg.Version)
 	if err != nil {
 		return nil, err
 	}

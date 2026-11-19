@@ -7,9 +7,9 @@ type User struct {
 	Username       string    `db:"username" json:"username"`
 	DisplayName    *string   `db:"display_name" json:"display_name"`
 	Description    *string   `db:"description" json:"description"`
-	MlKemPublicKey string    `db:"ml_kem_public_key" json:"ml_kem_public_key"`
-	EcdhPublicKey  string    `db:"ecdh_public_key" json:"ecdh_public_key"`
-	EdPublicKey    string    `db:"ed_public_key" json:"ed_public_key"`
+	MlKemPublicKey string    `db:"ml_kem_public_key" json:"ml_kem768_public_key"`
+	EcdhPublicKey  string    `db:"ecdh_public_key" json:"x448_public_key"`
+	EdPublicKey    string    `db:"ed_public_key" json:"ed448_public_key"`
 	Date           time.Time `db:"date" json:"date"`
 }
 
