@@ -59,7 +59,6 @@ func (m *MessageManager) Send(
 			Message: messages.Message{
 				Content:   []byte(content),
 				AuthorID:  userIdentity.ID,
-				SyncTag:   syncKey,
 				Timestamp: time.Now().UnixMilli(),
 			},
 		},
