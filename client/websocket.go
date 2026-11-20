@@ -43,6 +43,14 @@ type MessageNewEvent struct {
 	*domain.RawMessageWithReply
 }
 
+type MessageSeenEvent struct {
+	Type     string    `json:"type"`
+	UserID   string    `json:"user_id"`
+	ChatID   int       `json:"chat_id"`
+	SeenAt   time.Time `json:"seen_at"`
+	Messages []int     `json:"messages"`
+}
+
 func (m *MessageNewEvent) UnmarshalJSON(data []byte) error {
 	var helper struct {
 		Type    string             `json:"type"`
@@ -249,6 +257,14 @@ func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 				}
 
 				c.handleNewMessageEvent(&event)
+			case "message.seen":
+				var event MessageSeenEvent
+				if err := json.Unmarshal(message, &event); err != nil {
+					fmt.Println(err)
+					continue
+				}
+
+				c.handleMessageSeenEvent(&event)
 			}
 		}
 	}
@@ -410,24 +426,18 @@ func (c *BloomClient) handleNewMessageEvent(messageEvent *MessageNewEvent) {
 		return
 	}
 
+	if existing, err := c.database.GetMessage(messageEvent.ID); err != nil || existing != nil {
+		return
+	}
+
 	creds, err := c.getCredentials()
 	if err != nil {
 		return
 	}
 
-	chat, err := c.database.GetChat(messageEvent.ChatID)
-	if err != nil {
+	chat, err := c.getChatContext(context.Background(), messageEvent.ChatID)
+	if err != nil || chat == nil {
 		return
-	}
-	if chat == nil {
-		if _, err := c.getChatsContext(context.Background()); err != nil {
-			return
-		}
-
-		chat, err = c.database.GetChat(messageEvent.ChatID)
-		if err != nil || chat == nil {
-			return
-		}
 	}
 
 	recipient, err := getChatRecipient(&domain.Chat{
@@ -498,6 +508,19 @@ func (c *BloomClient) handleNewMessageEvent(messageEvent *MessageNewEvent) {
 
 	if messagesListener != nil {
 		messagesListener.OnNewMessage(messageJSON)
+	}
+
+	c.notifyChatsUpdated()
+}
+
+func (c *BloomClient) handleMessageSeenEvent(messageSeenEvent *MessageSeenEvent) {
+	if messageSeenEvent == nil || messageSeenEvent.ChatID == 0 || len(messageSeenEvent.Messages) == 0 {
+		return
+	}
+
+	if err := c.database.UpdateMessagesSeen(messageSeenEvent.ChatID, messageSeenEvent.Messages, messageSeenEvent.SeenAt); err != nil {
+		fmt.Println("failed to update messages seen:", err)
+		return
 	}
 
 	c.notifyChatsUpdated()

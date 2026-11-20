@@ -48,7 +48,6 @@ func saveMessageTx(tx *sql.Tx, message *domain.Message) error {
 			ON CONFLICT(id) DO UPDATE SET
 				chat_id = excluded.chat_id,
 				author_id = excluded.author_id,
-				created_at = excluded.created_at,
 				seen = excluded.seen,
 				reply_to = excluded.reply_to,
 				nonce = excluded.nonce,
@@ -85,7 +84,6 @@ func saveMessageTx(tx *sql.Tx, message *domain.Message) error {
 		ON CONFLICT(id) DO UPDATE SET
 			chat_id = excluded.chat_id,
 			author_id = excluded.author_id,
-			created_at = excluded.created_at,
 			seen = excluded.seen,
 			reply_to = excluded.reply_to,
 			nonce = excluded.nonce,
@@ -139,6 +137,30 @@ func (d *Database) SaveMessages(messages []domain.Message) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+func (d *Database) UpdateMessagesSeen(chatID int, messageIDs []int, seenAt time.Time) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, len(messageIDs))
+	args := make([]any, 0, len(messageIDs)+2)
+	args = append(args, seenAt.UTC(), chatID)
+
+	for i, messageID := range messageIDs {
+		placeholders[i] = "?"
+		args = append(args, messageID)
+	}
+
+	_, err := d.db.Exec(fmt.Sprintf(`
+		UPDATE messages
+		SET seen = ?
+		WHERE chat_id = ?
+		  AND id IN (%s)
+	`, strings.Join(placeholders, ", ")), args...)
+
+	return err
 }
 
 func (d *Database) GetMessage(messageID int) (*domain.Message, error) {

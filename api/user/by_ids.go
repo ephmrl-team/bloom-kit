@@ -2,7 +2,7 @@ package user
 
 import (
 	"context"
-	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/slipe-fun/bloom-kit/api"
@@ -10,11 +10,14 @@ import (
 )
 
 func (u *UserClient) GetByIDs(ctx context.Context, ids []string) (*[]domain.User, error) {
+	values := url.Values{}
+	values.Set("ids", strings.Join(ids, ","))
+
 	return api.Send[struct{}, []domain.User](
 		ctx,
 		u.client,
 		"GET",
-		fmt.Sprintf("/users?ids=%s", strings.Join(ids, ",")),
+		"/users?"+values.Encode(),
 		nil,
 	)
 }

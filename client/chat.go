@@ -459,6 +459,72 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 	return &result, nil
 }
 
+func (c *BloomClient) getChatContext(ctx context.Context, chatID int) (*domain.ChatWithKeys, error) {
+	chat, err := c.database.GetChat(chatID)
+	if err != nil {
+		return nil, err
+	}
+	if chat != nil {
+		return chat, nil
+	}
+
+	creds, err := c.loadCredentials()
+	if err != nil {
+		return nil, err
+	}
+
+	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteChat, err := c.chatManager.GetChat(ctx, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if remoteChat == nil {
+		return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
+	}
+
+	recipient, err := getChatRecipient(remoteChat, creds.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to build recipient identity: %w", domain.ErrInvalidUserIdentity, err)
+	}
+
+	handshakePayload, err := mappers.DecodeHandshake(remoteChat.Handshake)
+	if err != nil {
+		return nil, err
+	}
+
+	secretKeys, err := mappers.UnmapSecretKeys(creds.SecretKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer secretKeys.Wipe()
+
+	chatKey, syncKey, err := c.chatManager.FinalizeHandshake(handshakePayload, userIdentity, secretKeys, recipientIdentity)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.database.SaveChat(*remoteChat, chatKey, syncKey); err != nil {
+		return nil, err
+	}
+
+	if remoteChat.Members != nil {
+		if err := c.database.SaveUsers(*remoteChat.Members); err != nil {
+			fmt.Println("failed to save users:", err)
+		}
+	}
+
+	return c.database.GetChat(chatID)
+}
+
 func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
@@ -471,17 +537,25 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 	}
 
 	sort.SliceStable(chats, func(i, j int) bool {
-		leftDate := chats[i].CreatedAt
-		if chats[i].LastMessage != nil {
-			leftDate = chats[i].LastMessage.CreatedAt
+		leftLastMessage := chats[i].LastMessage
+		rightLastMessage := chats[j].LastMessage
+
+		if leftLastMessage != nil && rightLastMessage != nil {
+			if !leftLastMessage.CreatedAt.Equal(rightLastMessage.CreatedAt) {
+				return leftLastMessage.CreatedAt.After(rightLastMessage.CreatedAt)
+			}
+
+			return chats[i].ID > chats[j].ID
 		}
 
-		rightDate := chats[j].CreatedAt
-		if chats[j].LastMessage != nil {
-			rightDate = chats[j].LastMessage.CreatedAt
+		if leftLastMessage != nil {
+			return true
+		}
+		if rightLastMessage != nil {
+			return false
 		}
 
-		return leftDate.After(rightDate)
+		return chats[i].ID > chats[j].ID
 	})
 
 	result := make([]ChatResponse, 0, len(chats))

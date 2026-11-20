@@ -30,22 +30,12 @@ func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int
 		return nil, err
 	}
 
-	chat, err := c.database.GetChat(chatID)
+	chat, err := c.getChatContext(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
 	if chat == nil {
-		if _, err := c.getChatsContext(ctx); err != nil {
-			return nil, err
-		}
-
-		chat, err = c.database.GetChat(chatID)
-		if err != nil {
-			return nil, err
-		}
-		if chat == nil {
-			return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
-		}
+		return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
 	}
 
 	recipient, err := getChatRecipient(&domain.Chat{
@@ -306,22 +296,12 @@ func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID
 		return nil, err
 	}
 
-	chat, err := c.database.GetChat(chatID)
+	chat, err := c.getChatContext(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
 	if chat == nil {
-		if _, err := c.getChatsContext(ctx); err != nil {
-			return nil, err
-		}
-
-		chat, err = c.database.GetChat(chatID)
-		if err != nil {
-			return nil, err
-		}
-		if chat == nil {
-			return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
-		}
+		return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
 	}
 
 	recipient, err := getChatRecipient(&domain.Chat{
@@ -355,7 +335,7 @@ func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID
 	}
 
 	if err := c.database.SaveMessage(message); err != nil {
-		return nil, err
+		fmt.Println("failed to save message:", err)
 	}
 
 	if err := c.forgetPendingSend(chatID, replyToID, content); err != nil {

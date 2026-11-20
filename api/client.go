@@ -23,8 +23,8 @@ const (
 )
 
 type ApiError struct {
-	Code    string
-	Message string
+	Code    string `json:"error"`
+	Message string `json:"message"`
 }
 
 func (e *ApiError) Error() string {

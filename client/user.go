@@ -136,6 +136,8 @@ func (c *BloomClient) EditUser(token *CancelToken, req *EditRequest) ([]byte, er
 		return nil, err
 	}
 
+	_ = c.UpdateCredentialsUserJSON(editedUserBytes)
+
 	c.updateUser(editedUserBytes)
 
 	return editedUserBytes, nil
