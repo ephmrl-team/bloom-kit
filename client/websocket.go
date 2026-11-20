@@ -352,9 +352,6 @@ func (c *BloomClient) handleNewChatEvent(chatEvent *ChatNewEvent) {
 	}
 
 	chatType := chatEvent.ChatType
-	if chatType == "" {
-		chatType = chat.Type
-	}
 
 	switch chatType {
 	case "private":
