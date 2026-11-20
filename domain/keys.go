@@ -27,6 +27,6 @@ type IdentityKeysRequest struct {
 }
 
 type GetKeysResponse struct {
-	UserID int `json:"user_id"`
+	UserID string `json:"user_id"`
 	EncryptedKey
 }
