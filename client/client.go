@@ -48,6 +48,7 @@ type ConnectionListener interface {
 type BloomClient struct {
 	wsURL           string
 	apiClient       *api.Client
+	dialContext     DialContextFunc
 	authManager     *authManager.AuthManager
 	exchangeManager *exchangeManager.ExchangeManager
 	userManager     *userManager.UserManager
@@ -93,8 +94,34 @@ type BloomClient struct {
 	sendInflight map[string]*inflightSend
 }
 
+type Option func(*clientOptions)
+
+type clientOptions struct {
+	dialContext DialContextFunc
+}
+
+func WithDialContext(dial DialContextFunc) Option {
+	return func(options *clientOptions) {
+		if dial != nil {
+			options.dialContext = dial
+		}
+	}
+}
+
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {
+	return NewClientWithOptions(baseURL, wsURL, storagePath, encryptionKey)
+}
+
+func NewClientWithOptions(baseURL, wsURL, storagePath string, encryptionKey []byte, opts ...Option) *BloomClient {
+	options := clientOptions{
+		dialContext: newDialContext(),
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	c := api.NewClient(baseURL)
+	c.SetDialContext(options.dialContext)
 
 	ac := authClient.NewAuthClient(c)
 	ec := exchangeClient.NewExchangeClient(c)
@@ -108,6 +135,7 @@ func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomC
 	return &BloomClient{
 		wsURL:           wsURL,
 		apiClient:       c,
+		dialContext:     options.dialContext,
 		authManager:     authManager.NewAuthManager(ac),
 		exchangeManager: exchangeManager.NewExchangeManager(ec),
 		userManager:     userManager.NewUserManager(uc),

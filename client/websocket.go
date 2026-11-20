@@ -146,9 +146,15 @@ func (c *BloomClient) stopWebSocket() {
 	c.wsMu.Unlock()
 }
 
+func (c *BloomClient) websocketDialer() *websocket.Dialer {
+	dialer := *websocket.DefaultDialer
+	dialer.NetDialContext = c.dialContext
+	return &dialer
+}
+
 func (c *BloomClient) connectAndListen(ctx context.Context, url string) error {
 	dialCtx, dialCancel := context.WithTimeout(ctx, wsDialTimeout)
-	conn, _, err := websocket.DefaultDialer.DialContext(dialCtx, url, nil)
+	conn, _, err := c.websocketDialer().DialContext(dialCtx, url, nil)
 	dialCancel()
 	if err != nil {
 		return fmt.Errorf("websocket dial error: %w", err)

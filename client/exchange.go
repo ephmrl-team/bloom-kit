@@ -173,7 +173,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 		}
 	}
 
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, url, nil)
+	conn, _, err := c.websocketDialer().DialContext(ctx, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to dial exchange websocket: %w", err)
 	}

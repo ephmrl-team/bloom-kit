@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -67,6 +68,17 @@ func NewClient(baseURL string) *Client {
 	})
 
 	return client
+}
+
+func (c *Client) SetDialContext(dial func(ctx context.Context, network, address string) (net.Conn, error)) {
+	transport, ok := c.httpClient.Transport().(*http.Transport)
+	if !ok {
+		return
+	}
+
+	cloned := transport.Clone()
+	cloned.DialContext = dial
+	c.httpClient.SetTransport(cloned)
 }
 
 func (c *Client) SetToken(token string) {
