@@ -62,18 +62,16 @@ func (m *MessageManager) GetMessages(
 			decryptedReply, err := m.DecryptMessage(&domain.RawMessageWithReply{
 				RawMessage: *msg.ReplyToMessage,
 			}, encryptionKey, syncKey, userIdentity, recipientIdentity)
-			if err != nil {
-				return nil, err
-			}
-			if decryptedReply == nil {
-				return nil, errors.New("decrypted reply is nil")
-			}
-
-			replyToMessage = &domain.MessageWithDecryptedData{
-				RawMessageWithReply: domain.RawMessageWithReply{
-					RawMessage: *msg.ReplyToMessage,
-				},
-				Message: *decryptedReply,
+			if err != nil || decryptedReply == nil {
+				msg.ReplyTo = nil
+				msg.ReplyToMessage = nil
+			} else {
+				replyToMessage = &domain.MessageWithDecryptedData{
+					RawMessageWithReply: domain.RawMessageWithReply{
+						RawMessage: *msg.ReplyToMessage,
+					},
+					Message: *decryptedReply,
+				}
 			}
 		}
 

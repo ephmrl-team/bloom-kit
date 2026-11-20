@@ -454,18 +454,16 @@ func (c *BloomClient) handleNewMessageEvent(messageEvent *MessageNewEvent) {
 		decryptedReply, err := c.messageManager.DecryptMessage(&domain.RawMessageWithReply{
 			RawMessage: *messageEvent.ReplyTo,
 		}, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
-		if err != nil {
-			return
-		}
-		if decryptedReply == nil {
-			return
-		}
-
-		replyToMessage = &domain.MessageWithDecryptedData{
-			RawMessageWithReply: domain.RawMessageWithReply{
-				RawMessage: *messageEvent.ReplyTo,
-			},
-			Message: *decryptedReply,
+		if err != nil || decryptedReply == nil {
+			messageEvent.RawMessageWithReply.ReplyTo = nil
+			messageEvent.RawMessageWithReply.ReplyToMessage = nil
+		} else {
+			replyToMessage = &domain.MessageWithDecryptedData{
+				RawMessageWithReply: domain.RawMessageWithReply{
+					RawMessage: *messageEvent.ReplyTo,
+				},
+				Message: *decryptedReply,
+			}
 		}
 	}
 
