@@ -370,6 +370,7 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 	defer secretKeys.Wipe()
 
 	var missingChats []domain.ChatWithKeys
+	brokenChats := make(map[int]struct{})
 	for _, id := range missing {
 		chat, exists := chatsMap[id]
 		if !exists {
@@ -388,11 +389,13 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 
 		handshakePayload, err := mappers.DecodeHandshake(chat.Handshake)
 		if err != nil {
+			brokenChats[id] = struct{}{}
 			continue
 		}
 
 		chatKey, syncKey, err := c.chatManager.FinalizeHandshake(handshakePayload, userIdentity, secretKeys, recipientIdentity)
 		if err != nil {
+			brokenChats[id] = struct{}{}
 			continue
 		}
 
@@ -428,6 +431,17 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if len(brokenChats) > 0 {
+		filtered := result[:0]
+		for _, chat := range result {
+			if _, broken := brokenChats[chat.ID]; broken {
+				continue
+			}
+			filtered = append(filtered, chat)
+		}
+		result = filtered
 	}
 
 	if len(members) > 0 {
