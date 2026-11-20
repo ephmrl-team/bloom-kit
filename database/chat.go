@@ -28,6 +28,11 @@ func (d *Database) SaveChat(chat domain.Chat, chatKey, syncKey []byte) error {
 	_, err = d.db.Exec(`
 		INSERT INTO chats (id, members, handshake, chat_key, sync_key, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			members = excluded.members,
+			handshake = excluded.handshake,
+			chat_key = excluded.chat_key,
+			sync_key = excluded.sync_key;
 	`, chat.ID, string(membersJSON), string(handshakeJSON), encodedChatKey, encodedSyncKey, chat.CreatedAt)
 	if err != nil {
 		return err
