@@ -269,6 +269,38 @@ func (c *BloomClient) loadMessagesAuto(ctx context.Context, chatID, beforeID int
 }
 
 func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
+	key := pendingSendHash(chatID, replyToValue(replyToID), content)
+
+	c.sendMu.Lock()
+	if inflight, ok := c.sendInflight[key]; ok {
+		c.sendMu.Unlock()
+
+		select {
+		case <-inflight.done:
+			return inflight.message, inflight.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	inflight := &inflightSend{done: make(chan struct{})}
+	c.sendInflight[key] = inflight
+	c.sendMu.Unlock()
+
+	defer func() {
+		close(inflight.done)
+
+		c.sendMu.Lock()
+		delete(c.sendInflight, key)
+		c.sendMu.Unlock()
+	}()
+
+	inflight.message, inflight.err = c.sendMessageOnce(ctx, chatID, replyToID, content)
+
+	return inflight.message, inflight.err
+}
+
+func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
 		return nil, err
@@ -309,12 +341,24 @@ func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *in
 		return nil, err
 	}
 
-	message, err := c.messageManager.Send(ctx, content, chatID, replyToID, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
+	clientMessageID, err := c.pendingClientMessageID(chatID, replyToID, content)
 	if err != nil {
 		return nil, err
 	}
 
+	message, err := c.messageManager.Send(ctx, clientMessageID, content, chatID, replyToID, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
+	if err != nil {
+		if rememberErr := c.rememberPendingSend(chatID, replyToID, content, clientMessageID); rememberErr != nil {
+			return nil, fmt.Errorf("%w: failed to remember pending send: %w", err, rememberErr)
+		}
+		return nil, err
+	}
+
 	if err := c.database.SaveMessage(message); err != nil {
+		return nil, err
+	}
+
+	if err := c.forgetPendingSend(chatID, replyToID, content); err != nil {
 		return nil, err
 	}
 

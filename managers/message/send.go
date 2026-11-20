@@ -13,6 +13,7 @@ import (
 
 func (m *MessageManager) Send(
 	ctx context.Context,
+	clientMessageID string,
 	content string,
 	chatID int,
 	replyToID *int,
@@ -26,7 +27,7 @@ func (m *MessageManager) Send(
 		return nil, err
 	}
 
-	sendMessageRequest := message.NewSendMessageRequest(chatID, replyToID, *encryptedMessage)
+	sendMessageRequest := message.NewSendMessageRequest(clientMessageID, chatID, replyToID, *encryptedMessage)
 
 	sentMessage, err := m.messageClient.Send(ctx, sendMessageRequest)
 	if err != nil {

@@ -118,12 +118,21 @@ type Message struct {
 }
 
 type SendMessageRequest struct {
-	Version    string `json:"version"`
-	Ciphertext string `json:"ciphertext"`
-	Nonce      string `json:"nonce"`
-	Salt       string `json:"salt"`
-	ChatID     int    `json:"chat_id"`
-	ReplyTo    *int   `json:"reply_to,omitempty"`
+	Version         string `json:"version"`
+	Ciphertext      string `json:"ciphertext"`
+	Nonce           string `json:"nonce"`
+	Salt            string `json:"salt"`
+	ChatID          int    `json:"chat_id"`
+	ReplyTo         *int   `json:"reply_to,omitempty"`
+	ClientMessageID string `json:"client_message_id,omitempty"`
+}
+
+type PendingSend struct {
+	ChatID          int       `db:"chat_id" json:"chat_id"`
+	ReplyTo         int       `db:"reply_to" json:"reply_to"`
+	ContentHash     string    `db:"content_hash" json:"content_hash"`
+	ClientMessageID string    `db:"client_message_id" json:"client_message_id"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
 }
 
 type DecryptedMessage struct {

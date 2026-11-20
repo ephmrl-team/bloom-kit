@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/slipe-fun/bloom-kit/api"
 	authClient "github.com/slipe-fun/bloom-kit/api/auth"
@@ -85,6 +86,9 @@ type BloomClient struct {
 	hasLastChatsHash bool
 
 	sessionMu sync.Mutex
+
+	sendMu       sync.Mutex
+	sendInflight map[string]*inflightSend
 }
 
 func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomClient {
@@ -109,6 +113,7 @@ func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomC
 		messageManager:  messageManager.NewMessageManager(mc),
 		storagePath:     storagePath,
 		encryptionKey:   localKey,
+		sendInflight:    make(map[string]*inflightSend),
 	}
 }
 
@@ -120,6 +125,11 @@ func (c *BloomClient) Initialize() error {
 		return err
 	}
 	c.database = db
+
+	if err := db.DeleteExpiredPendingSends(time.Now().UTC().Add(-pendingSendRetention)); err != nil {
+		return fmt.Errorf("failed to delete expired pending sends: %w", err)
+	}
+
 	creds, err := c.loadCredentials()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

@@ -76,6 +76,21 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
 	);
 
+	CREATE TABLE IF NOT EXISTS pending_sends (
+	    chat_id INTEGER NOT NULL,
+	    reply_to INTEGER NOT NULL,
+	    content_hash TEXT NOT NULL,
+	    client_message_id TEXT NOT NULL,
+	    created_at DATETIME NOT NULL,
+
+	    UNIQUE (chat_id, reply_to, content_hash),
+
+	    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_pending_sends_created_at
+	    ON pending_sends(created_at);
+
 	CREATE INDEX IF NOT EXISTS idx_messages_chat_id_id
 	    ON messages(chat_id, id);
 
@@ -134,6 +149,7 @@ func (d *Database) ClearAll() error {
 	defer tx.Rollback()
 
 	for _, table := range []string{
+		"pending_sends",
 		"messages",
 		"chat_sync_states",
 		"chats",

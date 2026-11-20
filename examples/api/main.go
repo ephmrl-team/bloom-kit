@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/slipe-fun/bloom-kit/api"
 	authClient "github.com/slipe-fun/bloom-kit/api/auth"
 	chatClient "github.com/slipe-fun/bloom-kit/api/chat"
@@ -83,12 +84,12 @@ func main() {
 	fmt.Println("Created chat key:", hex.EncodeToString(chatKey))
 	fmt.Println("Created chat sync key:", hex.EncodeToString(syncKey))
 
-	message, err := messageManager.Send(ctx, "bye chat", createdChat.ID, nil, chatKey, syncKey, user, receiverIdentity)
+	message, err := messageManager.Send(ctx, uuid.NewString(), "bye chat", createdChat.ID, nil, chatKey, syncKey, user, receiverIdentity)
 	if err != nil {
 		panic(err)
 	}
 
-	_, err = messageManager.Send(ctx, "bye chat 2", createdChat.ID, &message.ID, chatKey, syncKey, user, receiverIdentity)
+	_, err = messageManager.Send(ctx, uuid.NewString(), "bye chat 2", createdChat.ID, &message.ID, chatKey, syncKey, user, receiverIdentity)
 	if err != nil {
 		panic(err)
 	}
