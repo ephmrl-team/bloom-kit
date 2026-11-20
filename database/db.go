@@ -1,20 +1,32 @@
 package database
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sync"
 
 	sqlite "gosqlite.org"
 	"gosqlite.org/vfs/crypto"
 )
 
 type Database struct {
-	db *sqlite.DB
+	db      *sqlite.DB
+	closeMu sync.Mutex
 }
 
 func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	if len(encryptionKey) != 32 {
 		return nil, fmt.Errorf("invalid encryption key")
+	}
+
+	if storagePath == "" {
+		return nil, fmt.Errorf("storage path is empty")
+	}
+
+	if err := os.MkdirAll(storagePath, 0o700); err != nil {
+		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
 	dbPath := filepath.Join(storagePath, "bloom.db")
@@ -171,8 +183,23 @@ func (d *Database) ClearAll() error {
 	return nil
 }
 
-func (d *Database) closeDatabase() {
-	if d.db != nil {
-		_ = d.db.Close()
+func (d *Database) Close() error {
+	if d == nil {
+		return nil
 	}
+
+	d.closeMu.Lock()
+	defer d.closeMu.Unlock()
+
+	if d.db == nil {
+		return nil
+	}
+
+	db := d.db
+	d.db = nil
+
+	_, checkpointErr := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	closeErr := db.Close()
+
+	return errors.Join(checkpointErr, closeErr)
 }

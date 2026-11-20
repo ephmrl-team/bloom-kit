@@ -65,11 +65,32 @@ func InitClient(baseURL, wsURL, storagePath *C.char, encKey *C.uchar, keyLen C.i
 	goStorage := C.GoString(storagePath)
 	goKey := C.GoBytes(unsafe.Pointer(encKey), keyLen)
 
+	if globalClient != nil {
+		_ = globalClient.Close()
+		globalClient = nil
+	}
+
 	newClient := client.NewClient(goBaseURL, goWsURL, goStorage, goKey)
 	if err := newClient.Initialize(); err != nil {
+		_ = newClient.Close()
 		return makeErrorJSON(err)
 	}
 	globalClient = newClient
+	return nil
+}
+
+//export Shutdown
+func Shutdown() *C.char {
+	if globalClient == nil {
+		return nil
+	}
+
+	err := globalClient.Close()
+	globalClient = nil
+	if err != nil {
+		return makeErrorJSON(err)
+	}
+
 	return nil
 }
 

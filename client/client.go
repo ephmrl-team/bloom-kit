@@ -87,6 +87,8 @@ type BloomClient struct {
 
 	sessionMu sync.Mutex
 
+	initMu sync.Mutex
+
 	sendMu       sync.Mutex
 	sendInflight map[string]*inflightSend
 }
@@ -118,27 +120,56 @@ func NewClient(baseURL, wsURL, storagePath string, encryptionKey []byte) *BloomC
 }
 
 func (c *BloomClient) Initialize() error {
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+
+	if c.database != nil {
+		return nil
+	}
+
 	dbKey := make([]byte, len(c.encryptionKey))
 	copy(dbKey, c.encryptionKey)
 	db, err := database.NewDatabase(dbKey, c.storagePath)
 	if err != nil {
 		return err
 	}
-	c.database = db
 
 	if err := db.DeleteExpiredPendingSends(time.Now().UTC().Add(-pendingSendRetention)); err != nil {
+		_ = db.Close()
 		return fmt.Errorf("failed to delete expired pending sends: %w", err)
 	}
 
 	creds, err := c.loadCredentials()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			c.database = db
 			return nil
 		}
+		_ = db.Close()
 		return fmt.Errorf("failed to load credentials: %w", err)
 	}
+
+	c.database = db
 	c.SetToken(creds.Token)
 	c.startWebSocket(context.Background(), c.wsURL)
+	return nil
+}
+
+func (c *BloomClient) Close() error {
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+
+	c.CancelExchange()
+	c.stopWebSocket()
+	c.StopChatsSync()
+
+	db := c.database
+	c.database = nil
+
+	if db != nil {
+		return db.Close()
+	}
+
 	return nil
 }
 
